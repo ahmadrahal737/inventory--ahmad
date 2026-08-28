@@ -1,7 +1,7 @@
 import sys
 import os
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+import  as tk
+from  import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 from pathlib import Path
 from datetime import datetime
