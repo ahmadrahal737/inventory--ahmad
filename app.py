@@ -409,8 +409,7 @@ export default function App() {
                 style={styles.quickCard}
                 onPress={openAdd}
               >
-                <Text style={styles.quickIcon}>
-                  ＋
+                <Text style={styles.quickIcon} 
                 </Text>
 
                 <Text>
