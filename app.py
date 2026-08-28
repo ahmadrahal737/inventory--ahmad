@@ -7,165 +7,114 @@ import hashlib
 import hmac
 from datetime import datetime, timedelta
 
-try:
-    from streamlit_cookies_controller import CookieController
-except ImportError:
-    st.error("Please install: pip install streamlit-cookies-controller")
-    st.stop()
+# =========================================================
+# ENGINEER AHMAD - INVENTORY MANAGER
+# =========================================================
 
-
-# ============================================================
-# ENGINEER AHMAD - CAR KEY INVENTORY
-# ============================================================
-
-DB_NAME = "car_keys.db"
-LOGIN_DAYS = 30
-LOW_STOCK_DEFAULT = 5
-
-
-# ============================================================
-# PAGE
-# ============================================================
+DB_NAME = "inventory.db"
+SESSION_DAYS = 30
 
 st.set_page_config(
-    page_title="Engineer Ahmad | Car Key Inventory",
-    page_icon="🔑",
+    page_title="Engineer Ahmad | Inventory Manager",
+    page_icon="📦",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-
-# ============================================================
-# COLORS / UI
-# ============================================================
+# =========================================================
+# LIGHT MOBILE UI
+# =========================================================
 
 st.markdown("""
 <style>
 
-:root {
-    --orange: #F57C00;
-    --dark-orange: #E65100;
-    --black: #111111;
-    --red: #D32F2F;
-    --light: #F5F5F5;
-    --white: #FFFFFF;
-    --gray: #666666;
-}
-
 .stApp {
-    background: #F4F4F4;
+    background: #F5F7FA;
 }
 
 .block-container {
-    max-width: 1250px;
     padding-top: 1rem;
     padding-left: 1rem;
     padding-right: 1rem;
+    max-width: 1400px;
 }
 
-/* Main title */
-
-.main-title {
-    background: #111111;
-    color: #FF9800;
-    padding: 18px;
-    border-radius: 15px;
-    text-align: center;
-    font-size: 30px;
-    font-weight: 800;
-    margin-bottom: 20px;
+h1, h2, h3 {
+    color: #17324D !important;
 }
-
-/* Product card */
-
-.key-card {
-    background: #FFFFFF;
-    border: 2px solid #EEEEEE;
-    border-left: 7px solid #F57C00;
-    border-radius: 16px;
-    padding: 16px;
-    margin-bottom: 15px;
-    box-shadow: 0 3px 12px rgba(0,0,0,0.08);
-}
-
-/* Product name */
-
-.key-name {
-    color: #111111;
-    font-size: 24px;
-    font-weight: 800;
-    margin-bottom: 8px;
-}
-
-/* Labels */
-
-.field-label {
-    color: #F57C00;
-    font-weight: 800;
-    font-size: 14px;
-}
-
-.field-value {
-    color: #222222;
-    font-size: 16px;
-}
-
-/* Stock */
-
-.stock-good {
-    color: #111111;
-    font-size: 20px;
-    font-weight: 800;
-}
-
-.stock-low {
-    color: #D32F2F;
-    font-size: 20px;
-    font-weight: 800;
-}
-
-/* Login */
-
-.login-box {
-    background: white;
-    border-top: 8px solid #F57C00;
-    border-radius: 18px;
-    padding: 25px;
-    box-shadow: 0 5px 20px rgba(0,0,0,0.10);
-}
-
-/* Buttons */
 
 div.stButton > button,
 div.stFormSubmitButton > button {
     min-height: 48px;
-    border-radius: 11px;
-    font-weight: 700;
+    border-radius: 12px;
     font-size: 16px;
+    font-weight: 600;
 }
 
-/* Inputs */
+div.stButton > button:hover,
+div.stFormSubmitButton > button:hover {
+    transform: translateY(-1px);
+}
 
 input, textarea {
     border-radius: 10px !important;
 }
 
-/* Mobile */
+[data-testid="stMetric"] {
+    background: white;
+    border-radius: 14px;
+    padding: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+}
+
+.product-card {
+    background: white;
+    border-radius: 16px;
+    padding: 14px;
+    margin-bottom: 15px;
+    box-shadow: 0 3px 14px rgba(0,0,0,0.07);
+}
+
+.product-name {
+    font-size: 21px;
+    font-weight: 700;
+    color: #17324D;
+}
+
+.product-info {
+    font-size: 15px;
+    margin-top: 5px;
+}
+
+.low-stock {
+    color: #C53030;
+    font-weight: bold;
+}
+
+.good-stock {
+    color: #2F855A;
+    font-weight: bold;
+}
+
+.admin-box {
+    background: white;
+    padding: 18px;
+    border-radius: 16px;
+    box-shadow: 0 3px 14px rgba(0,0,0,0.07);
+}
 
 @media (max-width: 768px) {
-
     .block-container {
-        padding-left: 0.5rem;
-        padding-right: 0.5rem;
+        padding-left: 0.6rem;
+        padding-right: 0.6rem;
     }
 
-    .main-title {
-        font-size: 23px;
-        padding: 14px;
+    h1 {
+        font-size: 28px !important;
     }
 
-    .key-name {
-        font-size: 21px;
+    h2 {
+        font-size: 23px !important;
     }
 
     div.stButton > button {
@@ -177,28 +126,45 @@ input, textarea {
 """, unsafe_allow_html=True)
 
 
-# ============================================================
+# =========================================================
 # DATABASE
-# ============================================================
+# =========================================================
 
-def db():
-    return sqlite3.connect(
-        DB_NAME,
-        check_same_thread=False
-    )
+def get_connection():
+    return sqlite3.connect(DB_NAME, check_same_thread=False)
 
 
-def init_database():
+def column_exists(table, column):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(f"PRAGMA table_info({table})")
+    columns = [row[1] for row in cur.fetchall()]
+    conn.close()
+    return column in columns
 
-    conn = db()
+
+def add_column(table, column, definition):
+    if not column_exists(table, column):
+        conn = get_connection()
+        conn.execute(
+            f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
+        )
+        conn.commit()
+        conn.close()
+
+
+def init_db():
+
+    conn = get_connection()
     cur = conn.cursor()
 
+    # USERS
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             email TEXT PRIMARY KEY,
             password_hash TEXT NOT NULL,
-            is_admin INTEGER DEFAULT 0,
             is_approved INTEGER DEFAULT 0,
+            is_admin INTEGER DEFAULT 0,
             is_active INTEGER DEFAULT 1,
             session_token TEXT,
             token_expiry TEXT,
@@ -206,118 +172,105 @@ def init_database():
         )
     """)
 
+    # PRODUCTS
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS keys_inventory (
+        CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            key_name TEXT NOT NULL,
-
-            part_number TEXT,
-            brand TEXT,
-            car_model TEXT,
-            year TEXT,
-            key_type TEXT,
-            key_color TEXT,
-
+            name TEXT NOT NULL,
+            sku TEXT,
+            category TEXT,
+            color TEXT,
             quantity INTEGER DEFAULT 0,
             price REAL DEFAULT 0,
-
-            low_stock_limit INTEGER DEFAULT 5,
-
+            link TEXT,
             image BLOB,
-            notes TEXT,
-
+            low_stock_limit INTEGER DEFAULT 5,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
+    # LOGS
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS inventory_logs (
+        CREATE TABLE IF NOT EXISTS logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-
             user_email TEXT,
             action TEXT,
-
-            key_id INTEGER,
-
-            quantity_change INTEGER DEFAULT 0,
-            new_quantity INTEGER,
-
+            product_id INTEGER,
             details TEXT,
-
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            timestamp TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
     conn.commit()
     conn.close()
 
+    # Compatibility with old database
+    add_column("users", "password_hash", "TEXT")
+    add_column("users", "is_admin", "INTEGER DEFAULT 0")
+    add_column("users", "is_active", "INTEGER DEFAULT 1")
+    add_column("users", "session_token", "TEXT")
+    add_column("users", "token_expiry", "TEXT")
 
-init_database()
+    add_column("products", "sku", "TEXT")
+    add_column("products", "category", "TEXT")
+    add_column("products", "low_stock_limit", "INTEGER DEFAULT 5")
+    add_column("products", "created_at", "TEXT")
+    add_column("products", "updated_at", "TEXT")
 
 
-# ============================================================
+init_db()
+
+
+# =========================================================
 # PASSWORD SECURITY
-# ============================================================
+# =========================================================
 
 def hash_password(password):
-
     salt = secrets.token_bytes(16)
-
     key = hashlib.pbkdf2_hmac(
         "sha256",
         password.encode(),
         salt,
-        150000
+        120000
     )
 
-    return (
-        salt.hex()
-        + ":"
-        + key.hex()
-    )
+    return salt.hex() + ":" + key.hex()
 
 
-def check_password(password, stored):
+def verify_password(password, stored_hash):
 
     try:
+        salt_hex, key_hex = stored_hash.split(":")
 
-        salt_hex, key_hex = stored.split(":")
+        salt = bytes.fromhex(salt_hex)
 
-        salt = bytes.fromhex(
-            salt_hex
-        )
-
-        key = hashlib.pbkdf2_hmac(
+        new_key = hashlib.pbkdf2_hmac(
             "sha256",
             password.encode(),
             salt,
-            150000
+            120000
         )
 
         return hmac.compare_digest(
-            key.hex(),
+            new_key.hex(),
             key_hex
         )
 
     except Exception:
-
         return False
 
 
-# ============================================================
-# USERS
-# ============================================================
+# =========================================================
+# USER FUNCTIONS
+# =========================================================
 
-def number_of_users():
+def user_count():
 
-    conn = db()
+    conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute(
-        "SELECT COUNT(*) FROM users"
-    )
+    cur.execute("SELECT COUNT(*) FROM users")
 
     result = cur.fetchone()[0]
 
@@ -326,27 +279,23 @@ def number_of_users():
     return result
 
 
-def register_user(email, password):
+def create_user(email, password):
 
-    email = email.strip().lower()
+    conn = get_connection()
 
-    first_user = number_of_users() == 0
+    cur = conn.cursor()
 
-    conn = db()
+    first_user = user_count() == 0
 
-    conn.execute("""
+    password_hash = hash_password(password)
+
+    cur.execute("""
         INSERT INTO users
-        (
-            email,
-            password_hash,
-            is_admin,
-            is_approved,
-            is_active
-        )
+        (email, password_hash, is_approved, is_admin, is_active)
         VALUES (?, ?, ?, ?, 1)
     """, (
-        email,
-        hash_password(password),
+        email.lower().strip(),
+        password_hash,
         1 if first_user else 0,
         1 if first_user else 0
     ))
@@ -357,40 +306,32 @@ def register_user(email, password):
     return first_user
 
 
-def login_user(email, password):
+def authenticate_user(email, password):
 
-    email = email.strip().lower()
+    conn = get_connection()
 
-    conn = db()
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT
-            email,
-            password_hash,
-            is_admin,
-            is_approved,
-            is_active
+        SELECT email, password_hash,
+               is_approved, is_admin, is_active
         FROM users
         WHERE email=?
-    """, (email,))
+    """, (email.lower().strip(),))
 
-    row = cur.fetchone()
+    user = cur.fetchone()
 
     conn.close()
 
-    if not row:
+    if not user:
         return None
 
-    email, password_hash, admin, approved, active = row
+    email, password_hash, approved, admin, active = user
 
     if not active:
         return "disabled"
 
-    if not check_password(
-        password,
-        password_hash
-    ):
+    if not verify_password(password, password_hash):
         return None
 
     if not approved:
@@ -398,34 +339,25 @@ def login_user(email, password):
 
     return {
         "email": email,
-        "admin": bool(admin)
+        "is_admin": bool(admin)
     }
 
 
-# ============================================================
-# PERMANENT LOGIN COOKIE
-# ============================================================
+# =========================================================
+# SESSION TOKEN
+# =========================================================
 
-cookies = CookieController()
+def create_session(email):
 
+    token = secrets.token_urlsafe(48)
 
-def create_login_session(email):
+    expiry = datetime.now() + timedelta(days=SESSION_DAYS)
 
-    token = secrets.token_urlsafe(64)
-
-    expiry = datetime.now() + timedelta(
-        days=LOGIN_DAYS
-    )
-
-    conn = db()
+    conn = get_connection()
 
     conn.execute("""
         UPDATE users
-
-        SET
-            session_token=?,
-            token_expiry=?
-
+        SET session_token=?, token_expiry=?
         WHERE email=?
     """, (
         token,
@@ -436,33 +368,21 @@ def create_login_session(email):
     conn.commit()
     conn.close()
 
-    cookies.set(
-        "engineer_ahmad_login",
-        token,
-        max_age=LOGIN_DAYS * 24 * 60 * 60
-    )
+    return token
 
 
-def validate_login_cookie():
-
-    token = cookies.get(
-        "engineer_ahmad_login"
-    )
+def validate_session(token):
 
     if not token:
         return None
 
-    conn = db()
+    conn = get_connection()
+
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT
-            email,
-            is_admin,
-            token_expiry
-
+        SELECT email, token_expiry, is_admin
         FROM users
-
         WHERE session_token=?
         AND is_approved=1
         AND is_active=1
@@ -475,65 +395,75 @@ def validate_login_cookie():
     if not row:
         return None
 
-    email, admin, expiry = row
+    email, expiry, is_admin = row
 
     try:
-
-        if datetime.fromisoformat(
-            expiry
-        ) > datetime.now():
-
+        if datetime.fromisoformat(expiry) > datetime.now():
             return {
                 "email": email,
-                "admin": bool(admin)
+                "is_admin": bool(is_admin)
             }
-
-    except Exception:
+    except:
         pass
 
     return None
 
 
-def logout_user():
+def logout():
 
-    email = st.session_state.get(
-        "user_email"
-    )
+    email = st.session_state.get("user_email")
 
     if email:
 
-        conn = db()
+        conn = get_connection()
 
         conn.execute("""
             UPDATE users
-
-            SET
-                session_token=NULL,
+            SET session_token=NULL,
                 token_expiry=NULL
-
             WHERE email=?
         """, (email,))
 
         conn.commit()
         conn.close()
 
-    try:
-        cookies.remove(
-            "engineer_ahmad_login"
-        )
-    except Exception:
-        pass
-
     st.session_state.logged_in = False
     st.session_state.user_email = ""
     st.session_state.is_admin = False
 
+    st.query_params.clear()
+
     st.rerun()
 
 
-# ============================================================
-# SESSION STATE
-# ============================================================
+# =========================================================
+# LOGGING
+# =========================================================
+
+def log_action(action, product_id=None, details=""):
+
+    email = st.session_state.get("user_email", "")
+
+    conn = get_connection()
+
+    conn.execute("""
+        INSERT INTO logs
+        (user_email, action, product_id, details)
+        VALUES (?, ?, ?, ?)
+    """, (
+        email,
+        action,
+        product_id,
+        details
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+# =========================================================
+# SESSION START
+# =========================================================
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -545,89 +475,81 @@ if "is_admin" not in st.session_state:
     st.session_state.is_admin = False
 
 
-# ============================================================
-# AUTOMATIC LOGIN
-# ============================================================
+# Check saved session
+saved_token = st.query_params.get("session")
 
-if not st.session_state.logged_in:
+if not st.session_state.logged_in and saved_token:
 
-    saved_session = validate_login_cookie()
+    session = validate_session(saved_token)
 
-    if saved_session:
+    if session:
 
         st.session_state.logged_in = True
+        st.session_state.user_email = session["email"]
+        st.session_state.is_admin = session["is_admin"]
 
-        st.session_state.user_email = \
-            saved_session["email"]
+        st.query_params.clear()
 
-        st.session_state.is_admin = \
-            saved_session["admin"]
+        st.rerun()
 
 
-# ============================================================
-# LOGIN SCREEN
-# ============================================================
+# =========================================================
+# LOGIN / REGISTER
+# =========================================================
 
 if not st.session_state.logged_in:
 
     st.markdown(
-        """
-        <div class="main-title">
-            🔑 ENGINEER AHMAD<br>
-            CAR KEY INVENTORY
-        </div>
-        """,
+        "<h1 style='text-align:center;'>📦 Engineer Ahmad</h1>",
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        "<p style='text-align:center;'>Inventory Manager</p>",
         unsafe_allow_html=True
     )
 
     login_tab, register_tab = st.tabs([
-        "🔐 LOGIN",
-        "➕ CREATE ACCOUNT"
+        "🔐 Login",
+        "➕ Create Account"
     ])
 
-    # --------------------------------------------------------
+    # -----------------------------------------------------
     # LOGIN
-    # --------------------------------------------------------
+    # -----------------------------------------------------
 
     with login_tab:
 
-        st.subheader(
-            "Login to your account"
-        )
+        st.subheader("Welcome Back")
 
         email = st.text_input(
-            "EMAIL",
-            placeholder="Enter your email",
-            key="login_email"
+            "Email",
+            placeholder="example@email.com"
         )
 
         password = st.text_input(
-            "PASSWORD",
-            type="password",
-            placeholder="Enter your password",
-            key="login_password"
+            "Password",
+            type="password"
         )
 
         remember = st.checkbox(
-            "KEEP ME SIGNED IN",
+            "Keep me signed in",
             value=True
         )
 
         if st.button(
-            "🔐 LOGIN",
+            "🔐 Login",
             type="primary",
             use_container_width=True
         ):
 
             if not email or not password:
 
-                st.warning(
-                    "Please enter your email and password."
-                )
+                st.warning("Please enter your email and password.")
 
             else:
 
-                result = login_user(
+                result = authenticate_user(
                     email,
                     password
                 )
@@ -641,24 +563,22 @@ if not st.session_state.logged_in:
                 elif result == "disabled":
 
                     st.error(
-                        "Your account is disabled."
+                        "Your account has been disabled."
                     )
 
                 elif result:
 
                     st.session_state.logged_in = True
-
-                    st.session_state.user_email = \
-                        result["email"]
-
-                    st.session_state.is_admin = \
-                        result["admin"]
+                    st.session_state.user_email = result["email"]
+                    st.session_state.is_admin = result["is_admin"]
 
                     if remember:
 
-                        create_login_session(
+                        token = create_session(
                             result["email"]
                         )
+
+                        st.query_params["session"] = token
 
                     st.rerun()
 
@@ -668,54 +588,55 @@ if not st.session_state.logged_in:
                         "Invalid email or password."
                     )
 
-    # --------------------------------------------------------
+    # -----------------------------------------------------
     # REGISTER
-    # --------------------------------------------------------
+    # -----------------------------------------------------
 
     with register_tab:
 
-        st.subheader(
-            "Create New Account"
-        )
+        st.subheader("Create New Account")
 
-        if number_of_users() == 0:
+        if user_count() == 0:
 
             st.info(
-                "This will be the first account and will automatically become the Super Admin."
+                "This is the first account. "
+                "It will automatically become the Super Admin."
             )
 
         else:
 
             st.info(
-                "New accounts must be approved by the Super Admin."
+                "New accounts require administrator approval."
             )
 
         new_email = st.text_input(
-            "EMAIL",
-            key="new_email"
+            "Email",
+            key="register_email"
         )
 
         new_password = st.text_input(
-            "PASSWORD",
+            "Password",
             type="password",
-            key="new_password"
+            key="register_password"
         )
 
         confirm_password = st.text_input(
-            "CONFIRM PASSWORD",
+            "Confirm Password",
             type="password"
         )
 
         if st.button(
-            "➕ CREATE ACCOUNT",
+            "➕ Create Account",
             type="primary",
             use_container_width=True
         ):
 
-            if not new_email or not new_password:
+            email_clean = new_email.lower().strip()
+
+            if not email_clean or not new_password:
 
                 st.warning(
-                    "Please complete all fields."
+                    "Please complete all required fields."
                 )
 
             elif new_password != confirm_password:
@@ -734,21 +655,23 @@ if not st.session_state.logged_in:
 
                 try:
 
-                    first = register_user(
-                        new_email,
+                    is_first = create_user(
+                        email_clean,
                         new_password
                     )
 
-                    if first:
+                    if is_first:
 
                         st.success(
-                            "Account created. You are the Super Admin."
+                            "Account created successfully. "
+                            "You are the Super Admin."
                         )
 
                     else:
 
                         st.success(
-                            "Account created. Please wait for Admin approval."
+                            "Account created successfully. "
+                            "Please wait for administrator approval."
                         )
 
                 except sqlite3.IntegrityError:
@@ -760,21 +683,14 @@ if not st.session_state.logged_in:
     st.stop()
 
 
-# ============================================================
+# =========================================================
 # SIDEBAR
-# ============================================================
+# =========================================================
 
-st.sidebar.markdown(
-    """
-    <h2 style="color:#F57C00;">
-    🔑 Engineer Ahmad
-    </h2>
-    """,
-    unsafe_allow_html=True
-)
+st.sidebar.title("📦 Engineer Ahmad")
 
 st.sidebar.caption(
-    "Car Key Inventory"
+    "Inventory Manager"
 )
 
 st.sidebar.write(
@@ -783,188 +699,141 @@ st.sidebar.write(
 
 if st.session_state.is_admin:
 
-    st.sidebar.success(
-        "👑 SUPER ADMIN"
-    )
+    st.sidebar.success("👑 Super Admin")
 
 else:
 
-    st.sidebar.info(
-        "USER"
-    )
+    st.sidebar.info("👤 User")
 
 
-# ============================================================
+# =========================================================
+# DASHBOARD STATISTICS
+# =========================================================
+
+conn = get_connection()
+cur = conn.cursor()
+
+cur.execute("""
+    SELECT
+        COUNT(*),
+        COALESCE(SUM(quantity),0),
+        COALESCE(SUM(quantity * price),0)
+    FROM products
+""")
+
+total_products, total_quantity, inventory_value = cur.fetchone()
+
+cur.execute("""
+    SELECT COUNT(*)
+    FROM products
+    WHERE quantity <= low_stock_limit
+""")
+
+low_stock = cur.fetchone()[0]
+
+conn.close()
+
+
+# =========================================================
 # SIDEBAR MENU
-# ============================================================
-
-menu_items = [
-    "🏠 DASHBOARD",
-    "🔑 CAR KEYS",
-    "➕ ADD KEY",
-    "📋 HISTORY"
-]
-
-if st.session_state.is_admin:
-
-    menu_items.append(
-        "👑 ADMIN PANEL"
-    )
+# =========================================================
 
 page = st.sidebar.radio(
-    "MENU",
-    menu_items
+    "Menu",
+    [
+        "🏠 Dashboard",
+        "📦 Products",
+        "➕ Add Product",
+        "📋 Inventory History"
+    ] + (
+        ["👑 Admin Panel"]
+        if st.session_state.is_admin
+        else []
+    )
 )
 
+
 if st.sidebar.button(
-    "🚪 LOGOUT",
+    "🚪 Logout",
     use_container_width=True
 ):
 
-    logout_user()
+    logout()
 
 
-# ============================================================
+# =========================================================
 # DASHBOARD
-# ============================================================
+# =========================================================
 
-if page == "🏠 DASHBOARD":
+if page == "🏠 Dashboard":
 
-    st.markdown(
-        """
-        <div class="main-title">
-            🔑 ENGINEER AHMAD<br>
-            CAR KEY INVENTORY
-        </div>
-        """,
-        unsafe_allow_html=True
+    st.title("🏠 Dashboard")
+
+    st.caption(
+        "Welcome to Engineer Ahmad Inventory Manager"
     )
-
-    conn = db()
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT
-            COUNT(*),
-            COALESCE(SUM(quantity),0),
-            COALESCE(SUM(quantity * price),0)
-        FROM keys_inventory
-    """)
-
-    total_keys, total_quantity, total_value = \
-        cur.fetchone()
-
-    cur.execute("""
-        SELECT COUNT(*)
-        FROM keys_inventory
-        WHERE quantity <= low_stock_limit
-    """)
-
-    low_stock = cur.fetchone()[0]
-
-    conn.close()
 
     c1, c2, c3, c4 = st.columns(4)
 
     c1.metric(
-        "🔑 KEY TYPES",
-        total_keys
+        "📦 Products",
+        total_products
     )
 
     c2.metric(
-        "📦 TOTAL STOCK",
+        "🔢 Total Stock",
         total_quantity
     )
 
     c3.metric(
-        "⚠️ LOW STOCK",
+        "⚠️ Low Stock",
         low_stock
     )
 
     c4.metric(
-        "💰 STOCK VALUE",
-        f"${total_value:,.2f}"
+        "💰 Inventory Value",
+        f"${inventory_value:,.2f}"
     )
 
     st.divider()
 
-    st.subheader(
-        "Quick Search"
-    )
+    st.subheader("Quick Actions")
 
-    quick_search = st.text_input(
-        "SEARCH CAR KEY",
-        placeholder="Search by key name, part number, brand or model..."
-    )
+    q1, q2, q3 = st.columns(3)
 
-    if quick_search:
+    if q1.button(
+        "📦 View Products",
+        use_container_width=True
+    ):
+        st.info("Open Products from the menu.")
 
-        conn = db()
-        cur = conn.cursor()
+    if q2.button(
+        "➕ Add Product",
+        use_container_width=True
+    ):
+        st.info("Open Add Product from the menu.")
 
-        pattern = f"%{quick_search}%"
-
-        cur.execute("""
-            SELECT
-                id,
-                key_name,
-                part_number,
-                brand,
-                car_model,
-                quantity,
-                price
-            FROM keys_inventory
-
-            WHERE key_name LIKE ?
-               OR part_number LIKE ?
-               OR brand LIKE ?
-               OR car_model LIKE ?
-
-            ORDER BY key_name COLLATE NOCASE ASC
-        """, (
-            pattern,
-            pattern,
-            pattern,
-            pattern
-        ))
-
-        results = cur.fetchall()
-
-        conn.close()
-
-        for row in results:
-
-            st.write(
-                f"🔑 **{row[1]}** | "
-                f"Part: {row[2] or '-'} | "
-                f"{row[3] or '-'} | "
-                f"{row[4] or '-'} | "
-                f"Stock: **{row[5]}** | "
-                f"${row[6]:.2f}"
-            )
+    if q3.button(
+        "📋 Inventory History",
+        use_container_width=True
+    ):
+        st.info("Open Inventory History from the menu.")
 
 
-# ============================================================
-# CAR KEYS
-# ============================================================
+# =========================================================
+# PRODUCTS
+# =========================================================
 
-elif page == "🔑 CAR KEYS":
+elif page == "📦 Products":
 
-    st.markdown(
-        """
-        <div class="main-title">
-            🔑 CAR KEYS
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    st.title("📦 Products")
 
     search = st.text_input(
-        "🔍 SEARCH",
-        placeholder="Key name / Part Number / Brand / Model / Year / Type..."
+        "🔍 Search",
+        placeholder="Search by name, SKU, category or color..."
     )
 
-    conn = db()
+    conn = get_connection()
     cur = conn.cursor()
 
     if search:
@@ -973,35 +842,16 @@ elif page == "🔑 CAR KEYS":
 
         cur.execute("""
             SELECT
-                id,
-                key_name,
-                part_number,
-                brand,
-                car_model,
-                year,
-                key_type,
-                key_color,
-                quantity,
-                price,
-                low_stock_limit,
-                image,
-                notes,
-                link
-            FROM keys_inventory
-
-            WHERE key_name LIKE ?
-               OR part_number LIKE ?
-               OR brand LIKE ?
-               OR car_model LIKE ?
-               OR year LIKE ?
-               OR key_type LIKE ?
-               OR key_color LIKE ?
-
-            ORDER BY key_name COLLATE NOCASE ASC
+                id, name, sku, category,
+                color, quantity, price,
+                link, image, low_stock_limit
+            FROM products
+            WHERE name LIKE ?
+               OR sku LIKE ?
+               OR category LIKE ?
+               OR color LIKE ?
+            ORDER BY name COLLATE NOCASE ASC
         """, (
-            pattern,
-            pattern,
-            pattern,
             pattern,
             pattern,
             pattern,
@@ -1012,477 +862,327 @@ elif page == "🔑 CAR KEYS":
 
         cur.execute("""
             SELECT
-                id,
-                key_name,
-                part_number,
-                brand,
-                car_model,
-                year,
-                key_type,
-                key_color,
-                quantity,
-                price,
-                low_stock_limit,
-                image,
-                notes,
-                link
-            FROM keys_inventory
-
-            ORDER BY key_name COLLATE NOCASE ASC
+                id, name, sku, category,
+                color, quantity, price,
+                link, image, low_stock_limit
+            FROM products
+            ORDER BY name COLLATE NOCASE ASC
         """)
 
-    keys = cur.fetchall()
+    products = cur.fetchall()
 
     conn.close()
 
-    st.caption(
-        f"{len(keys)} key(s) found"
-    )
+    if not products:
 
-    # --------------------------------------------------------
-    # VERTICAL PRODUCT LIST
-    # --------------------------------------------------------
+        st.info("No products found.")
 
-    for item in keys:
+    else:
 
-        (
-            key_id,
-            key_name,
-            part_number,
-            brand,
-            car_model,
-            year,
-            key_type,
-            key_color,
-            quantity,
-            price,
-            low_limit,
-            image_data,
-            notes,
-            link
-        ) = item
+        st.caption(
+            f"{len(products)} product(s) found"
+        )
 
-        with st.container(border=True):
+        for product in products:
 
-            image_col, info_col, action_col = st.columns(
-                [1.2, 3, 1.4]
-            )
+            (
+                p_id,
+                name,
+                sku,
+                category,
+                color,
+                qty,
+                price,
+                link,
+                image_data,
+                low_limit
+            ) = product
 
-            # IMAGE
-            with image_col:
+            with st.container(border=True):
 
-                if image_data:
+                col_image, col_info, col_actions = st.columns(
+                    [1, 2, 1]
+                )
 
-                    try:
+                with col_image:
 
-                        image = Image.open(
-                            io.BytesIO(image_data)
+                    if image_data:
+
+                        try:
+
+                            img = Image.open(
+                                io.BytesIO(image_data)
+                            )
+
+                            st.image(
+                                img,
+                                use_container_width=True
+                            )
+
+                        except:
+
+                            st.write("🖼️ Image error")
+
+                    else:
+
+                        st.write("🖼️ No image")
+
+                with col_info:
+
+                    st.markdown(
+                        f"<div class='product-name'>{name}</div>",
+                        unsafe_allow_html=True
+                    )
+
+                    if sku:
+                        st.write(f"SKU: {sku}")
+
+                    if category:
+                        st.write(
+                            f"Category: {category}"
                         )
 
-                        st.image(
-                            image,
+                    if color:
+                        st.write(
+                            f"Color: {color}"
+                        )
+
+                    if qty <= low_limit:
+
+                        st.markdown(
+                            f"<div class='low-stock'>"
+                            f"Stock: {qty} ⚠️ LOW STOCK"
+                            f"</div>",
+                            unsafe_allow_html=True
+                        )
+
+                    else:
+
+                        st.markdown(
+                            f"<div class='good-stock'>"
+                            f"Stock: {qty} ✓"
+                            f"</div>",
+                            unsafe_allow_html=True
+                        )
+
+                    st.write(
+                        f"Price: ${price:,.2f}"
+                    )
+
+                    st.write(
+                        f"Inventory Value: "
+                        f"${qty * price:,.2f}"
+                    )
+
+                    if link:
+
+                        st.link_button(
+                            "🌐 Product Link",
+                            link,
                             use_container_width=True
                         )
 
-                    except:
+                with col_actions:
 
-                        st.write(
-                            "🖼️ Image unavailable"
-                        )
+                    st.write("Stock")
 
-                else:
+                    minus, plus = st.columns(2)
 
-                    st.markdown(
-                        """
-                        <div style="
-                        height:130px;
-                        display:flex;
-                        align-items:center;
-                        justify-content:center;
-                        background:#EEEEEE;
-                        border-radius:12px;
-                        font-size:45px;">
-                        🔑
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+                    if minus.button(
+                        "−1",
+                        key=f"minus_{p_id}",
+                        use_container_width=True
+                    ):
 
-            # INFORMATION
-            with info_col:
+                        if qty > 0:
 
-                st.markdown(
-                    f"""
-                    <div class="key-name">
-                    {key_name}
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+                            conn = get_connection()
 
-                if part_number:
+                            conn.execute("""
+                                UPDATE products
+                                SET quantity=quantity-1,
+                                    updated_at=CURRENT_TIMESTAMP
+                                WHERE id=?
+                            """, (p_id,))
 
-                    st.write(
-                        f"🔢 **PART NUMBER:** {part_number}"
-                    )
+                            conn.commit()
+                            conn.close()
 
-                if brand:
-
-                    st.write(
-                        f"🚗 **BRAND:** {brand}"
-                    )
-
-                if car_model:
-
-                    st.write(
-                        f"🚘 **MODEL:** {car_model}"
-                    )
-
-                if year:
-
-                    st.write(
-                        f"📅 **YEAR:** {year}"
-                    )
-
-                if key_type:
-
-                    st.write(
-                        f"🔐 **KEY TYPE:** {key_type}"
-                    )
-
-                if key_color:
-
-                    st.write(
-                        f"🎨 **COLOR:** {key_color}"
-                    )
-
-                if quantity <= low_limit:
-
-                    st.markdown(
-                        f"""
-                        <div class="stock-low">
-                        📦 STOCK: {quantity} ⚠️ LOW STOCK
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-
-                else:
-
-                    st.markdown(
-                        f"""
-                        <div class="stock-good">
-                        📦 STOCK: {quantity}
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-
-                st.write(
-                    f"💰 **PRICE:** ${price:,.2f}"
-                )
-
-                if notes:
-
-                    st.write(
-                        f"📝 **NOTES:** {notes}"
-                    )
-
-                if link:
-
-                    st.link_button(
-                        "🌐 PRODUCT LINK",
-                        link
-                    )
-
-            # ACTIONS
-            with action_col:
-
-                st.write(
-                    "**STOCK**"
-                )
-
-                minus, plus = st.columns(2)
-
-                if minus.button(
-                    "−1",
-                    key=f"minus_{key_id}",
-                    use_container_width=True
-                ):
-
-                    if quantity > 0:
-
-                        conn = db()
-
-                        conn.execute("""
-                            UPDATE keys_inventory
-
-                            SET
-                                quantity=quantity-1,
-                                updated_at=CURRENT_TIMESTAMP
-
-                            WHERE id=?
-                        """, (key_id,))
-
-                        conn.commit()
-                        conn.close()
-
-                        conn = db()
-
-                        conn.execute("""
-                            INSERT INTO inventory_logs
-                            (
-                                user_email,
-                                action,
-                                key_id,
-                                quantity_change,
-                                new_quantity,
-                                details
+                            log_action(
+                                "Stock Out",
+                                p_id,
+                                f"Removed 1 from {name}"
                             )
 
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        """, (
-                            st.session_state.user_email,
-                            "STOCK OUT",
-                            key_id,
-                            -1,
-                            quantity - 1,
-                            f"Removed 1 from {key_name}"
-                        ))
+                            st.rerun()
+
+                        else:
+
+                            st.warning(
+                                "Stock is already 0."
+                            )
+
+                    if plus.button(
+                        "+1",
+                        key=f"plus_{p_id}",
+                        use_container_width=True
+                    ):
+
+                        conn = get_connection()
+
+                        conn.execute("""
+                            UPDATE products
+                            SET quantity=quantity+1,
+                                updated_at=CURRENT_TIMESTAMP
+                            WHERE id=?
+                        """, (p_id,))
 
                         conn.commit()
                         conn.close()
+
+                        log_action(
+                            "Stock In",
+                            p_id,
+                            f"Added 1 to {name}"
+                        )
 
                         st.rerun()
 
-                if plus.button(
-                    "+1",
-                    key=f"plus_{key_id}",
-                    use_container_width=True
-                ):
+                    st.divider()
 
-                    conn = db()
+                    edit_key = f"edit_{p_id}"
 
-                    conn.execute("""
-                        UPDATE keys_inventory
+                    if st.button(
+                        "✏️ Edit",
+                        key=edit_key,
+                        use_container_width=True
+                    ):
 
-                        SET
-                            quantity=quantity+1,
-                            updated_at=CURRENT_TIMESTAMP
+                        st.session_state[
+                            "editing_product"
+                        ] = p_id
 
-                        WHERE id=?
-                    """, (key_id,))
+                        st.rerun()
 
-                    conn.commit()
-                    conn.close()
+                    if st.button(
+                        "🗑️ Delete",
+                        key=f"delete_{p_id}",
+                        use_container_width=True
+                    ):
 
-                    conn = db()
+                        st.session_state[
+                            "delete_product"
+                        ] = p_id
 
-                    conn.execute("""
-                        INSERT INTO inventory_logs
-                        (
-                            user_email,
-                            action,
-                            key_id,
-                            quantity_change,
-                            new_quantity,
-                            details
-                        )
-
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (
-                        st.session_state.user_email,
-                        "STOCK IN",
-                        key_id,
-                        1,
-                        quantity + 1,
-                        f"Added 1 to {key_name}"
-                    ))
-
-                    conn.commit()
-                    conn.close()
-
-                    st.rerun()
-
-                st.divider()
-
-                if st.button(
-                    "✏️ EDIT",
-                    key=f"edit_{key_id}",
-                    use_container_width=True
-                ):
-
-                    st.session_state[
-                        "edit_key_id"
-                    ] = key_id
-
-                    st.rerun()
-
-                if st.button(
-                    "🗑️ DELETE",
-                    key=f"delete_{key_id}",
-                    use_container_width=True
-                ):
-
-                    st.session_state[
-                        "delete_key_id"
-                    ] = key_id
-
-                    st.rerun()
+                        st.rerun()
 
 
-# ============================================================
-# EDIT KEY
-# ============================================================
+# =========================================================
+# EDIT PRODUCT
+# =========================================================
 
-if "edit_key_id" in st.session_state:
+if "editing_product" in st.session_state:
 
-    edit_id = st.session_state.edit_key_id
+    edit_id = st.session_state.editing_product
 
-    conn = db()
+    conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT
-            key_name,
-            part_number,
-            brand,
-            car_model,
-            year,
-            key_type,
-            key_color,
-            quantity,
-            price,
-            low_stock_limit,
-            image,
-            notes,
-            link
-
-        FROM keys_inventory
-
+        SELECT name, sku, category, color,
+               quantity, price, link,
+               image, low_stock_limit
+        FROM products
         WHERE id=?
     """, (edit_id,))
 
-    old = cur.fetchone()
+    product = cur.fetchone()
 
     conn.close()
 
-    if old:
+    if product:
 
         st.divider()
 
-        st.header(
-            "✏️ EDIT CAR KEY"
-        )
+        st.header("✏️ Edit Product")
 
         (
             old_name,
-            old_part,
-            old_brand,
-            old_model,
-            old_year,
-            old_type,
+            old_sku,
+            old_category,
             old_color,
-            old_quantity,
+            old_qty,
             old_price,
-            old_low,
+            old_link,
             old_image,
-            old_notes,
-            old_link
-        ) = old
+            old_limit
+        ) = product
 
-        with st.form(
-            "edit_key_form"
-        ):
+        with st.form("edit_product_form"):
 
-            key_name = st.text_input(
-                "KEY NAME",
-                value=old_name or ""
+            name = st.text_input(
+                "Product Name",
+                value=old_name
             )
 
-            part_number = st.text_input(
-                "PART NUMBER",
-                value=old_part or ""
+            sku = st.text_input(
+                "SKU",
+                value=old_sku or ""
             )
 
-            brand = st.text_input(
-                "BRAND",
-                value=old_brand or ""
+            category = st.text_input(
+                "Category",
+                value=old_category or ""
             )
 
-            car_model = st.text_input(
-                "CAR MODEL",
-                value=old_model or ""
-            )
-
-            year = st.text_input(
-                "YEAR",
-                value=old_year or ""
-            )
-
-            key_type = st.text_input(
-                "KEY TYPE",
-                value=old_type or ""
-            )
-
-            key_color = st.text_input(
-                "COLOR",
+            color = st.text_input(
+                "Color",
                 value=old_color or ""
             )
 
             quantity = st.number_input(
-                "QUANTITY",
+                "Quantity",
                 min_value=0,
-                value=int(old_quantity)
+                value=old_qty
             )
 
             price = st.number_input(
-                "PRICE",
+                "Price",
                 min_value=0.0,
                 value=float(old_price),
                 step=0.5
             )
 
             low_limit = st.number_input(
-                "LOW STOCK ALERT",
+                "Low Stock Alert",
                 min_value=0,
-                value=int(old_low or 5)
-            )
-
-            notes = st.text_area(
-                "NOTES",
-                value=old_notes or ""
+                value=old_limit or 5
             )
 
             link = st.text_input(
-                "PRODUCT LINK",
+                "Product Link",
                 value=old_link or ""
             )
 
             new_image = st.file_uploader(
-                "REPLACE IMAGE",
-                type=[
-                    "jpg",
-                    "jpeg",
-                    "png",
-                    "webp"
-                ]
+                "Replace Image",
+                type=["jpg", "jpeg", "png"]
             )
 
             save = st.form_submit_button(
-                "💾 SAVE CHANGES",
+                "💾 Save Changes",
                 use_container_width=True
             )
 
             cancel = st.form_submit_button(
-                "CANCEL",
+                "Cancel",
                 use_container_width=True
             )
 
             if cancel:
 
                 del st.session_state[
-                    "edit_key_id"
+                    "editing_product"
                 ]
 
                 st.rerun()
@@ -1495,259 +1195,179 @@ if "edit_key_id" in st.session_state:
                     else old_image
                 )
 
-                conn = db()
+                conn = get_connection()
 
                 conn.execute("""
-                    UPDATE keys_inventory
-
-                    SET
-                        key_name=?,
-                        part_number=?,
-                        brand=?,
-                        car_model=?,
-                        year=?,
-                        key_type=?,
-                        key_color=?,
+                    UPDATE products
+                    SET name=?,
+                        sku=?,
+                        category=?,
+                        color=?,
                         quantity=?,
                         price=?,
-                        low_stock_limit=?,
-                        image=?,
-                        notes=?,
                         link=?,
+                        image=?,
+                        low_stock_limit=?,
                         updated_at=CURRENT_TIMESTAMP
-
                     WHERE id=?
                 """, (
-                    key_name,
-                    part_number,
-                    brand,
-                    car_model,
-                    year,
-                    key_type,
-                    key_color,
+                    name,
+                    sku,
+                    category,
+                    color,
                     quantity,
                     price,
-                    low_limit,
-                    image_data,
-                    notes,
                     link,
+                    image_data,
+                    low_limit,
                     edit_id
                 ))
 
                 conn.commit()
                 conn.close()
 
-                conn = db()
-
-                conn.execute("""
-                    INSERT INTO inventory_logs
-                    (
-                        user_email,
-                        action,
-                        key_id,
-                        quantity_change,
-                        new_quantity,
-                        details
-                    )
-
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    st.session_state.user_email,
-                    "EDIT KEY",
+                log_action(
+                    "Edit Product",
                     edit_id,
-                    0,
-                    quantity,
-                    f"Updated {key_name}"
-                ))
-
-                conn.commit()
-                conn.close()
+                    f"Updated product: {name}"
+                )
 
                 del st.session_state[
-                    "edit_key_id"
+                    "editing_product"
                 ]
 
                 st.success(
-                    "Car key updated successfully."
+                    "Product updated successfully."
                 )
 
                 st.rerun()
 
 
-# ============================================================
-# DELETE
-# ============================================================
+# =========================================================
+# DELETE CONFIRMATION
+# =========================================================
 
-if "delete_key_id" in st.session_state:
+if "delete_product" in st.session_state:
 
-    delete_id = st.session_state.delete_key_id
+    delete_id = st.session_state.delete_product
 
     st.warning(
-        "⚠️ DELETE THIS CAR KEY PERMANENTLY?"
+        "⚠️ Are you sure you want to permanently delete this product?"
     )
 
     yes, no = st.columns(2)
 
     if yes.button(
-        "🗑️ YES, DELETE",
+        "Yes, Delete",
+        type="primary",
         use_container_width=True
     ):
 
-        conn = db()
+        conn = get_connection()
+
         cur = conn.cursor()
 
-        cur.execute("""
-            SELECT key_name
-            FROM keys_inventory
-            WHERE id=?
-        """, (delete_id,))
+        cur.execute(
+            "SELECT name FROM products WHERE id=?",
+            (delete_id,)
+        )
 
         row = cur.fetchone()
 
-        key_name = row[0] if row else "Unknown"
+        product_name = row[0] if row else "Unknown"
 
-        cur.execute("""
-            DELETE FROM keys_inventory
-            WHERE id=?
-        """, (delete_id,))
+        cur.execute(
+            "DELETE FROM products WHERE id=?",
+            (delete_id,)
+        )
 
         conn.commit()
         conn.close()
 
-        conn = db()
-
-        conn.execute("""
-            INSERT INTO inventory_logs
-            (
-                user_email,
-                action,
-                key_id,
-                quantity_change,
-                new_quantity,
-                details
-            )
-
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            st.session_state.user_email,
-            "DELETE KEY",
+        log_action(
+            "Delete Product",
             delete_id,
-            0,
-            0,
-            f"Deleted {key_name}"
-        ))
-
-        conn.commit()
-        conn.close()
+            f"Deleted product: {product_name}"
+        )
 
         del st.session_state[
-            "delete_key_id"
+            "delete_product"
         ]
+
+        st.success(
+            "Product deleted successfully."
+        )
 
         st.rerun()
 
     if no.button(
-        "CANCEL",
+        "Cancel",
         use_container_width=True
     ):
 
         del st.session_state[
-            "delete_key_id"
+            "delete_product"
         ]
 
         st.rerun()
 
 
-# ============================================================
-# ADD KEY
-# ============================================================
+# =========================================================
+# ADD PRODUCT
+# =========================================================
 
-elif page == "➕ ADD KEY":
+elif page == "➕ Add Product":
 
-    st.markdown(
-        """
-        <div class="main-title">
-            ➕ ADD NEW CAR KEY
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    st.title("➕ Add New Product")
 
     with st.form(
-        "add_key_form",
+        "add_product",
         clear_on_submit=True
     ):
 
-        st.subheader(
-            "Basic Information"
+        name = st.text_input(
+            "Product Name *"
         )
 
-        key_name = st.text_input(
-            "KEY NAME *",
-            placeholder="Example: Mercedes Smart Key"
+        sku = st.text_input(
+            "SKU / Product Code"
         )
 
-        part_number = st.text_input(
-            "PART NUMBER",
-            placeholder="Example: A000905..."
+        category = st.text_input(
+            "Category"
         )
 
-        brand = st.text_input(
-            "BRAND",
-            placeholder="Example: Mercedes"
-        )
-
-        car_model = st.text_input(
-            "CAR MODEL",
-            placeholder="Example: W211"
-        )
-
-        year = st.text_input(
-            "YEAR",
-            placeholder="Example: 2003-2009"
-        )
-
-        key_type = st.text_input(
-            "KEY TYPE",
-            placeholder="Example: Smart Key / Remote / Blade"
-        )
-
-        key_color = st.text_input(
-            "COLOR",
-            placeholder="Example: Black"
-        )
-
-        st.subheader(
-            "Stock & Price"
+        color = st.text_input(
+            "Color"
         )
 
         quantity = st.number_input(
-            "QUANTITY",
+            "Initial Quantity",
             min_value=0,
             value=0,
             step=1
         )
 
         price = st.number_input(
-            "PRICE",
+            "Price",
             min_value=0.0,
             value=0.0,
             step=0.5
         )
 
         low_limit = st.number_input(
-            "LOW STOCK ALERT",
+            "Low Stock Alert",
             min_value=0,
-            value=LOW_STOCK_DEFAULT,
+            value=5,
             step=1
         )
 
-        st.subheader(
-            "Image & Notes"
+        link = st.text_input(
+            "Product Link (optional)"
         )
 
         image_file = st.file_uploader(
-            "PRODUCT IMAGE",
+            "Product Image",
             type=[
                 "jpg",
                 "jpeg",
@@ -1760,32 +1380,22 @@ elif page == "➕ ADD KEY":
 
             st.image(
                 image_file,
-                caption="IMAGE PREVIEW",
-                width=250
+                caption="Image Preview",
+                width=220
             )
 
-        notes = st.text_area(
-            "NOTES",
-            placeholder="Additional information..."
-        )
-
-        link = st.text_input(
-            "PRODUCT LINK",
-            placeholder="https://..."
-        )
-
-        save = st.form_submit_button(
-            "💾 SAVE CAR KEY",
+        submit = st.form_submit_button(
+            "💾 Save Product",
             type="primary",
             use_container_width=True
         )
 
-        if save:
+        if submit:
 
-            if not key_name.strip():
+            if not name.strip():
 
                 st.error(
-                    "KEY NAME is required."
+                    "Product Name is required."
                 )
 
             else:
@@ -1796,96 +1406,62 @@ elif page == "➕ ADD KEY":
                     else None
                 )
 
-                conn = db()
+                conn = get_connection()
+
                 cur = conn.cursor()
 
                 cur.execute("""
-                    INSERT INTO keys_inventory
+                    INSERT INTO products
                     (
-                        key_name,
-                        part_number,
-                        brand,
-                        car_model,
-                        year,
-                        key_type,
-                        key_color,
+                        name,
+                        sku,
+                        category,
+                        color,
                         quantity,
                         price,
-                        low_stock_limit,
+                        link,
                         image,
-                        notes,
-                        link
+                        low_stock_limit
                     )
-
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    key_name.strip(),
-                    part_number.strip(),
-                    brand.strip(),
-                    car_model.strip(),
-                    year.strip(),
-                    key_type.strip(),
-                    key_color.strip(),
+                    name.strip(),
+                    sku.strip(),
+                    category.strip(),
+                    color.strip(),
                     quantity,
                     price,
-                    low_limit,
+                    link.strip(),
                     image_data,
-                    notes.strip(),
-                    link.strip()
+                    low_limit
                 ))
 
-                key_id = cur.lastrowid
+                product_id = cur.lastrowid
 
                 conn.commit()
                 conn.close()
 
-                conn = db()
-
-                conn.execute("""
-                    INSERT INTO inventory_logs
-                    (
-                        user_email,
-                        action,
-                        key_id,
-                        quantity_change,
-                        new_quantity,
-                        details
-                    )
-
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    st.session_state.user_email,
-                    "ADD KEY",
-                    key_id,
-                    quantity,
-                    quantity,
-                    f"Added {key_name}"
-                ))
-
-                conn.commit()
-                conn.close()
+                log_action(
+                    "Add Product",
+                    product_id,
+                    f"Added {name}, quantity={quantity}"
+                )
 
                 st.success(
-                    f"'{key_name}' added successfully."
+                    f"Product '{name}' added successfully."
                 )
 
 
-# ============================================================
-# HISTORY
-# ============================================================
+# =========================================================
+# INVENTORY HISTORY
+# =========================================================
 
-elif page == "📋 HISTORY":
+elif page == "📋 Inventory History":
 
-    st.markdown(
-        """
-        <div class="main-title">
-            📋 INVENTORY HISTORY
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    st.title("📋 Inventory History")
 
-    conn = db()
+    conn = get_connection()
+
     cur = conn.cursor()
 
     cur.execute("""
@@ -1893,15 +1469,10 @@ elif page == "📋 HISTORY":
             user_email,
             action,
             details,
-            quantity_change,
-            new_quantity,
-            created_at
-
-        FROM inventory_logs
-
+            timestamp
+        FROM logs
         ORDER BY id DESC
-
-        LIMIT 300
+        LIMIT 200
     """)
 
     logs = cur.fetchall()
@@ -1911,57 +1482,31 @@ elif page == "📋 HISTORY":
     if not logs:
 
         st.info(
-            "No inventory history yet."
+            "No inventory activity yet."
         )
 
     else:
 
-        for (
-            email,
-            action,
-            details,
-            change,
-            new_qty,
-            created
-        ) in logs:
+        for email, action, details, timestamp in logs:
 
             with st.container(border=True):
 
-                if change > 0:
-
-                    icon = "🟧"
-
-                elif change < 0:
-
-                    icon = "🟥"
-
-                else:
-
-                    icon = "⬛"
-
                 st.write(
-                    f"{icon} **{action}**"
+                    f"**{action}**"
                 )
 
                 st.caption(
-                    f"{email} • {created}"
+                    f"{email} • {timestamp}"
                 )
 
                 st.write(details)
 
-                if change != 0:
 
-                    st.write(
-                        f"Quantity Change: **{change:+}** "
-                        f"| New Stock: **{new_qty}**"
-                    )
-
-
-# ============================================================
+# =========================================================
 # ADMIN PANEL
-# ============================================================
+# =========================================================
 
-elif page == "👑 ADMIN PANEL":
+elif page == "👑 Admin Panel":
 
     if not st.session_state.is_admin:
 
@@ -1971,32 +1516,24 @@ elif page == "👑 ADMIN PANEL":
 
         st.stop()
 
-    st.markdown(
-        """
-        <div class="main-title">
-            👑 SUPER ADMIN PANEL
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    st.title("👑 Admin Panel")
 
     st.info(
-        "Only the first account (Super Admin) can access this page."
+        "Only the Super Admin can access this panel."
     )
 
-    conn = db()
+    conn = get_connection()
+
     cur = conn.cursor()
 
     cur.execute("""
         SELECT
             email,
-            is_admin,
             is_approved,
+            is_admin,
             is_active,
             created_at
-
         FROM users
-
         ORDER BY created_at ASC
     """)
 
@@ -2004,18 +1541,12 @@ elif page == "👑 ADMIN PANEL":
 
     conn.close()
 
-    for (
-        email,
-        admin,
-        approved,
-        active,
-        created
-    ) in users:
+    for email, approved, admin, active, created in users:
 
         with st.container(border=True):
 
             c1, c2, c3, c4 = st.columns(
-                [3, 1.2, 1.2, 1.2]
+                [3, 1, 1, 1]
             )
 
             with c1:
@@ -2027,25 +1558,25 @@ elif page == "👑 ADMIN PANEL":
                 if admin:
 
                     st.caption(
-                        "👑 SUPER ADMIN"
+                        "👑 Super Admin"
                     )
 
                 elif not approved:
 
                     st.caption(
-                        "⏳ WAITING FOR APPROVAL"
+                        "⏳ Pending Approval"
                     )
 
                 elif not active:
 
                     st.caption(
-                        "🟥 DISABLED"
+                        "🚫 Disabled"
                     )
 
                 else:
 
                     st.caption(
-                        "✅ APPROVED USER"
+                        "✅ Approved User"
                     )
 
             with c2:
@@ -2053,12 +1584,12 @@ elif page == "👑 ADMIN PANEL":
                 if not approved and active:
 
                     if st.button(
-                        "APPROVE",
+                        "Approve",
                         key=f"approve_{email}",
                         use_container_width=True
                     ):
 
-                        conn = db()
+                        conn = get_connection()
 
                         conn.execute("""
                             UPDATE users
@@ -2069,65 +1600,67 @@ elif page == "👑 ADMIN PANEL":
                         conn.commit()
                         conn.close()
 
+                        st.success(
+                            "User approved."
+                        )
+
                         st.rerun()
 
             with c3:
 
-                if not admin:
+                if active and not admin:
 
-                    if active:
+                    if st.button(
+                        "Disable",
+                        key=f"disable_{email}",
+                        use_container_width=True
+                    ):
 
-                        if st.button(
-                            "DISABLE",
-                            key=f"disable_{email}",
-                            use_container_width=True
-                        ):
+                        conn = get_connection()
 
-                            conn = db()
+                        conn.execute("""
+                            UPDATE users
+                            SET is_active=0
+                            WHERE email=?
+                        """, (email,))
 
-                            conn.execute("""
-                                UPDATE users
-                                SET is_active=0
-                                WHERE email=?
-                            """, (email,))
+                        conn.commit()
+                        conn.close()
 
-                            conn.commit()
-                            conn.close()
+                        st.rerun()
 
-                            st.rerun()
+                elif not active and not admin:
 
-                    else:
+                    if st.button(
+                        "Enable",
+                        key=f"enable_{email}",
+                        use_container_width=True
+                    ):
 
-                        if st.button(
-                            "ENABLE",
-                            key=f"enable_{email}",
-                            use_container_width=True
-                        ):
+                        conn = get_connection()
 
-                            conn = db()
+                        conn.execute("""
+                            UPDATE users
+                            SET is_active=1
+                            WHERE email=?
+                        """, (email,))
 
-                            conn.execute("""
-                                UPDATE users
-                                SET is_active=1
-                                WHERE email=?
-                            """, (email,))
+                        conn.commit()
+                        conn.close()
 
-                            conn.commit()
-                            conn.close()
-
-                            st.rerun()
+                        st.rerun()
 
             with c4:
 
                 if not admin:
 
                     if st.button(
-                        "DELETE",
+                        "Delete",
                         key=f"user_delete_{email}",
                         use_container_width=True
                     ):
 
-                        conn = db()
+                        conn = get_connection()
 
                         conn.execute(
                             "DELETE FROM users WHERE email=?",
@@ -2140,20 +1673,15 @@ elif page == "👑 ADMIN PANEL":
                         st.rerun()
 
 
-# ============================================================
+# =========================================================
 # FOOTER
-# ============================================================
+# =========================================================
 
 st.markdown(
     """
     <hr>
-
-    <div style="
-        text-align:center;
-        color:#777;
-        font-size:13px;
-        padding:10px;">
-        🔑 Engineer Ahmad • Car Key Inventory
+    <div style='text-align:center;color:#718096;font-size:13px;'>
+        Engineer Ahmad • Inventory Manager
     </div>
     """,
     unsafe_allow_html=True
