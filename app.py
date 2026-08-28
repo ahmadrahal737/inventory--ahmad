@@ -351,8 +351,7 @@ export default function App() {
           </Text>
         </View>
 
-        <Text style={styles.headerIcon}>
-          📦
+        <Text style={styles.headerIcon} 
         </Text>
       </View>
 
