@@ -170,3 +170,80 @@ elif choice == "تصدير البيانات (CSV)":
         )
     else:
         st.warning("لا توجد بيانات متاحة للتصدير حالياً.")
+from flask import Flask, request, jsonify, render_template_string
+import sqlite3
+
+app = Flask(__name__)
+
+# إنشاء قاعدة البيانات تلقائياً للمستخدمين
+def init_db():
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            is_approved INTEGER DEFAULT 0
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# 1. صفحة التسجيل (Register)
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+    
+    try:
+        conn = sqlite3.connect('users.db')
+        cursor = conn.cursor()
+        # يتم حفظ المستخدم مع is_approved = 0 (بانتظار الموافقة)
+        cursor.execute("INSERT INTO users (email, password, is_approved) VALUES (?, ?, 0)", (email, password))
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "تم التسجيل بنجاح! حسابك بانتظار موافقة المسؤول."}), 201
+    except:
+        return jsonify({"error": "البريد الإلكتروني مستخدم بالفعل"}), 400
+
+# 2. صفحة تسجيل الدخول (Login)
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+    
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT is_approved FROM users WHERE email = ? AND password = ?", (email, password))
+    user = cursor.fetchone()
+    conn.close()
+    
+    if user:
+        if user[0] == 1:
+            return jsonify({"message": "تم الدخول بنجاح!", "status": "approved"})
+        else:
+            return jsonify({"error": "حسابك قيد مراجعة المسؤول ولم يتم تفعيله بعد."}), 403
+    return jsonify({"error": "البريد الإلكتروني أو كلمة السر غير صحيحة"}), 401
+
+# 3. لوحة تحكم الأدمن لتمكين الحسابات (Admin Approve)
+@app.route('/admin/approve', methods=['POST'])
+def approve_user():
+    # هنا تضع إيميل المستخدم الذي تريد الموافقة عليه
+    data = request.json
+    target_email = data.get('email')
+    
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET is_approved = 1 WHERE email = ?", (target_email,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"message": f"تمت الموافقة على حساب {target_email} بنجاح!"})
+
+if __name__ == '__main__':
+    app.run(debug=True)
