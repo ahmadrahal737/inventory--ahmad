@@ -591,4 +591,7 @@ export default function App() {
 
       <Modal
         visible={modal}
-        animationType="
+         
+
+
+
