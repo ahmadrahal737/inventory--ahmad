@@ -3,7 +3,6 @@ import sqlite3
 import pandas as pd
 from PIL import Image
 import io
-import os
 
 # --- إعداد قاعدة البيانات ---
 DB_FILE = "inventory.db"
@@ -22,25 +21,93 @@ def init_db():
 
 init_db()
 
-# --- واجهة الموقع ---
-st.set_page_config(page_title="نظام إدارة المخزون", layout="wide")
-st.title("📦 نظام إدارة المخزون (Inventory Management)")
+# --- إعداد الصفحة والتصميم (CSS Custom Theme) ---
+st.set_page_config(page_title="نظام أحمد رحال لإدارة المخزون", layout="wide")
+
+st.markdown("""
+    <style>
+    /* ألوان الخلفيات والعناصر الرئيسية */
+    .stApp {
+        background-color: #f8fafc;
+    }
+    
+    /* الهيدر العلوي */
+    .header-container {
+        background: linear-gradient(135deg, #4f46e5, #06b6d4);
+        padding: 2rem;
+        border-radius: 16px;
+        color: white;
+        text-align: center;
+        box-shadow: 0 10px 20px rgba(79, 70, 229, 0.15);
+        margin-bottom: 2rem;
+    }
+    
+    .header-container h1 {
+        color: white !important;
+        font-size: 2.2rem;
+        margin-bottom: 0.5rem;
+        font-weight: 700;
+    }
+    
+    .developer-badge {
+        background-color: rgba(255, 255, 255, 0.2);
+        padding: 6px 16px;
+        border-radius: 50px;
+        font-size: 1rem;
+        font-weight: 600;
+        display: inline-block;
+        backdrop-filter: blur(5px);
+    }
+    
+    /* تخصيص القائمة الجانبية */
+    section[data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-left: 1px solid #e2e8f0;
+    }
+    
+    /* تخصيص الأزرار */
+    .stButton > button {
+        background: linear-gradient(135deg, #4f46e5, #06b6d4);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        font-weight: bold;
+        transition: all 0.3s ease;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(79, 70, 229, 0.3);
+        color: white;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- الترويسة الرئيسية ---
+st.markdown("""
+    <div class="header-container">
+        <h1>📦 نظام إدارة المخزون الذكي</h1>
+        <div class="developer-badge">تطوير المطور: أحمد رحال ✨</div>
+    </div>
+""", unsafe_allow_html=True)
 
 # القائمة الجانبية للتنقل
+st.sidebar.markdown("### 👤 **أحمد رحال**")
+st.sidebar.markdown("---")
 menu = ["عرض المخزون", "إضافة منتج جديد", "تصدير البيانات (CSV)"]
-choice = st.sidebar.selectbox("القائمة الرئيسية", menu)
+choice = st.sidebar.radio("القائمة الرئيسية", menu)
 
 # --- 1. عرض المخزون ---
 if choice == "عرض المخزون":
-    st.subheader("جدول المنتجات الحالية")
+    st.subheader("📊 جدول المنتجات الحالية")
     conn = sqlite3.connect(DB_FILE)
-    df = pd.read_sql_query("SELECT id, name, quantity, price FROM products", conn)
+    df = pd.read_sql_query("SELECT id AS 'المعرف', name AS 'اسم المنتج', quantity AS 'الكمية', price AS 'السعر ($)' FROM products", conn)
     
     if not df.empty:
         st.dataframe(df, use_container_width=True)
         
         # عرض صور المنتجات
-        st.subheader("📷 صور المنتجات")
+        st.subheader("📷 معرض صور المنتجات")
         c = conn.cursor()
         c.execute("SELECT name, image FROM products WHERE image IS NOT NULL")
         rows = c.fetchall()
@@ -55,12 +122,12 @@ if choice == "عرض المخزون":
                 except Exception:
                     pass
     else:
-        st.info("لا توجد منتجات مسجلة حتى الآن.")
+        st.info("لا توجد منتجات مسجلة حتى الآن في النظام.")
     conn.close()
 
 # --- 2. إضافة منتج جديد ---
 elif choice == "إضافة منتج جديد":
-    st.subheader("إضافة منتج إلى قاعدة البيانات")
+    st.subheader("➕ إضافة منتج إلى قاعدة البيانات")
     
     with st.form("add_product_form", clear_on_submit=True):
         name = st.text_input("اسم المنتج")
@@ -84,11 +151,11 @@ elif choice == "إضافة منتج جديد":
                           (name, quantity, price, img_bytes))
                 conn.commit()
                 conn.close()
-                st.success(f"تمت إضافة المنتج '{name}' بنجاح!")
+                st.success(f"تمت إضافة المنتج '{name}' بنجاح إلى نظام أحمد رحال!")
 
 # --- 3. تصدير البيانات ---
 elif choice == "تصدير البيانات (CSV)":
-    st.subheader("تصدير ملف Excel / CSV")
+    st.subheader("📥 تصدير ملف البيانات")
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query("SELECT id, name, quantity, price FROM products", conn)
     conn.close()
@@ -96,10 +163,10 @@ elif choice == "تصدير البيانات (CSV)":
     if not df.empty:
         csv = df.to_csv(index=False).encode('utf-8-sig')
         st.download_button(
-            label="📥 تحميل ملف CSV",
+            label="📥 تحميل تقرير المخزون (CSV)",
             data=csv,
-            file_name='inventory_report.csv',
+            file_name='inventory_report_ahmad_rahhal.csv',
             mime='text/csv',
         )
     else:
-        st.warning("لا توجد بيانات لتصديرها.")
+        st.warning("لا توجد بيانات متاحة للتصدير حالياً.")
