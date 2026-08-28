@@ -7,7 +7,7 @@ import hashlib
 import hmac
 
 # ============================================================
-# ENGINEER AHMAD - CAR KEY INVENTORY (STABLE SESSION AUTH)
+# ENGINEER AHMAD - CAR KEY INVENTORY (MULTI-USER & APPROVAL)
 # ============================================================
 
 DB_NAME = "car_keys.db"
@@ -145,11 +145,13 @@ def init_database():
     cur = conn.cursor()
 
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS admin_account (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            email TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            role TEXT DEFAULT 'user',
+            is_approved INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
@@ -189,10 +191,11 @@ def init_database():
 
     conn.commit()
 
-    cur.execute("SELECT COUNT(*) FROM admin_account WHERE id = 1")
+    # التأكد من وجود حساب المدير الافتراضي
+    cur.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'")
     if cur.fetchone()[0] == 0:
         conn.execute(
-            "INSERT INTO admin_account (id, email, password_hash) VALUES (1, ?, ?)",
+            "INSERT INTO users (email, password_hash, role, is_approved) VALUES (?, ?, 'admin', 1)",
             (DEFAULT_ADMIN_EMAIL.strip().lower(), hash_password(DEFAULT_ADMIN_PASSWORD))
         )
         conn.commit()
@@ -220,34 +223,6 @@ def check_password(password, stored):
 init_database()
 
 # ============================================================
-# ADMIN ACCOUNT HELPERS
-# ============================================================
-
-def get_admin():
-    conn = db()
-    cur = conn.cursor()
-    cur.execute("SELECT email, password_hash FROM admin_account WHERE id = 1")
-    row = cur.fetchone()
-    conn.close()
-    return row
-
-def verify_admin_login(email, password):
-    admin_email, admin_hash = get_admin()
-    email = email.strip().lower()
-    if email != admin_email:
-        return False
-    return check_password(password, admin_hash)
-
-def update_admin_credentials(new_email, new_password):
-    conn = db()
-    conn.execute(
-        "UPDATE admin_account SET email=?, password_hash=?, updated_at=CURRENT_TIMESTAMP WHERE id=1",
-        (new_email.strip().lower(), hash_password(new_password))
-    )
-    conn.commit()
-    conn.close()
-
-# ============================================================
 # SESSION STATE AUTHENTICATION
 # ============================================================
 
@@ -255,14 +230,17 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "user_email" not in st.session_state:
     st.session_state.user_email = ""
+if "user_role" not in st.session_state:
+    st.session_state.user_role = "user"
 
 def logout_user():
     st.session_state.logged_in = False
     st.session_state.user_email = ""
+    st.session_state.user_role = "user"
     st.rerun()
 
 # ============================================================
-# LOGIN SCREEN
+# AUTHENTICATION & REGISTRATION SCREEN
 # ============================================================
 
 if not st.session_state.logged_in:
@@ -276,20 +254,63 @@ if not st.session_state.logged_in:
         unsafe_allow_html=True
     )
 
-    st.subheader("Login")
-    email = st.text_input("EMAIL", placeholder="Enter your email", key="login_email")
-    password = st.text_input("PASSWORD", type="password", placeholder="Enter your password", key="login_password")
+    tab_login, tab_register = st.tabs(["🔐 Login", "📝 Create New Account"])
 
-    if st.button("🔐 LOGIN", type="primary", use_container_width=True):
-        if not email or not password:
-            st.warning("Please enter your email and password.")
-        elif verify_admin_login(email, password):
-            admin_email, _ = get_admin()
-            st.session_state.logged_in = True
-            st.session_state.user_email = admin_email
-            st.rerun()
-        else:
-            st.error("Invalid email or password.")
+    with tab_login:
+        st.subheader("Login to your account")
+        email = st.text_input("EMAIL", placeholder="Enter your email", key="login_email")
+        password = st.text_input("PASSWORD", type="password", placeholder="Enter your password", key="login_password")
+
+        if st.button("🔐 LOGIN", type="primary", use_container_width=True):
+            if not email or not password:
+                st.warning("Please enter your email and password.")
+            else:
+                conn = db()
+                cur = conn.cursor()
+                cur.execute("SELECT password_hash, role, is_approved FROM users WHERE email = ?", (email.strip().lower(),))
+                row = cur.fetchone()
+                conn.close()
+
+                if row and check_password(password, row[0]):
+                    hashed_pw, role, is_approved = row
+                    if is_approved == 1:
+                        st.session_state.logged_in = True
+                        st.session_state.user_email = email.strip().lower()
+                        st.session_state.user_role = role
+                        st.rerun()
+                    else:
+                        st.warning("⏳ Your account is pending approval from the administrator.")
+                else:
+                    st.error("Invalid email or password.")
+
+    with tab_register:
+        st.subheader("Request a New Account")
+        reg_email = st.text_input("EMAIL", placeholder="Enter your email", key="reg_email")
+        reg_password = st.text_input("PASSWORD", type="password", placeholder="Create a password (min 6 chars)", key="reg_password")
+        reg_confirm = st.text_input("CONFIRM PASSWORD", type="password", placeholder="Confirm password", key="reg_confirm")
+
+        if st.button("📝 SUBMIT REGISTRATION", use_container_width=True):
+            if not reg_email or not reg_password:
+                st.warning("Please fill in all fields.")
+            elif reg_password != reg_confirm:
+                st.error("Passwords do not match.")
+            elif len(reg_password) < 6:
+                st.error("Password must be at least 6 characters.")
+            else:
+                conn = db()
+                cur = conn.cursor()
+                cur.execute("SELECT COUNT(*) FROM users WHERE email = ?", (reg_email.strip().lower(),))
+                if cur.fetchone()[0] > 0:
+                    st.error("This email is already registered.")
+                    conn.close()
+                else:
+                    cur.execute(
+                        "INSERT INTO users (email, password_hash, role, is_approved) VALUES (?, ?, 'user', 0)",
+                        (reg_email.strip().lower(), hash_password(reg_password))
+                    )
+                    conn.commit()
+                    conn.close()
+                    st.success("✅ Registration submitted successfully! Please wait for the admin to approve your account before logging in.")
 
     st.stop()
 
@@ -306,15 +327,23 @@ st.sidebar.markdown(
 
 st.sidebar.caption("Car Key Inventory")
 st.sidebar.write(f"👤 {st.session_state.user_email}")
-st.sidebar.success("👑 ADMIN")
+
+if st.session_state.user_role == "admin":
+    st.sidebar.success("👑 ADMIN")
+else:
+    st.sidebar.info("👤 STAFF USER")
 
 menu_items = [
     "🏠 DASHBOARD",
     "🔑 CAR KEYS",
     "➕ ADD KEY",
-    "📋 HISTORY",
-    "⚙ ACCOUNT"
+    "📋 HISTORY"
 ]
+
+if st.session_state.user_role == "admin":
+    menu_items.append("👥 MANAGE USERS")
+
+menu_items.append("⚙ ACCOUNT")
 
 page = st.sidebar.radio("MENU", menu_items)
 
@@ -729,6 +758,67 @@ elif page == "📋 HISTORY":
                     st.write(f"Quantity Change: **{change:+}** | New Stock: **{new_qty}**")
 
 # ============================================================
+# MANAGE USERS (ADMIN ONLY)
+# ============================================================
+
+elif page == "👥 MANAGE USERS" and st.session_state.user_role == "admin":
+    st.markdown(
+        """
+        <div class="main-title">
+            👥 MANAGE USERS & APPROVALS
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, email, role, is_approved, created_at FROM users ORDER BY id ASC")
+    users = cur.fetchall()
+    conn.close()
+
+    for u_id, u_email, u_role, u_approved, u_created in users:
+        with st.container(border=True):
+            col_info, col_action = st.columns([3, 1])
+            with col_info:
+                st.write(f"📧 **{u_email}**")
+                st.caption(f"Role: {u_role.upper()} | Registered: {u_created}")
+                if u_approved == 1:
+                    st.success("Status: Approved")
+                else:
+                    st.warning("Status: Pending Approval")
+
+            with col_action:
+                # منع التلاعب بحساب المدير الرئيسي الأول
+                if u_id == 1:
+                    st.info("Main Admin")
+                else:
+                    if u_approved == 0:
+                        if st.button("✅ Approve", key=f"approve_{u_id}", use_container_width=True):
+                            conn = db()
+                            conn.execute("UPDATE users SET is_approved = 1 WHERE id = ?", (u_id,))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"Approved {u_email}")
+                            st.rerun()
+                    else:
+                        if st.button("🔒 Revoke", key=f"revoke_{u_id}", use_container_width=True):
+                            conn = db()
+                            conn.execute("UPDATE users SET is_approved = 0 WHERE id = ?", (u_id,))
+                            conn.commit()
+                            conn.close()
+                            st.warning(f"Revoked access for {u_email}")
+                            st.rerun()
+
+                    if st.button("🗑 Delete", key=f"del_user_{u_id}", use_container_width=True):
+                        conn = db()
+                        conn.execute("DELETE FROM users WHERE id = ?", (u_id,))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"Deleted {u_email}")
+                        st.rerun()
+
+# ============================================================
 # ACCOUNT
 # ============================================================
 
@@ -742,20 +832,25 @@ elif page == "⚙ ACCOUNT":
         unsafe_allow_html=True
     )
 
-    admin_email, _ = get_admin()
-    st.write(f"Current login email: **{admin_email}**")
+    st.write(f"Current login email: **{st.session_state.user_email}**")
+
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT password_hash FROM users WHERE email = ?", (st.session_state.user_email,))
+    user_row = cur.fetchone()
+    conn.close()
 
     with st.form("change_credentials_form"):
         st.subheader("Change Email / Password")
         current_password = st.text_input("CURRENT PASSWORD", type="password")
-        new_email = st.text_input("NEW EMAIL", value=admin_email)
+        new_email = st.text_input("NEW EMAIL", value=st.session_state.user_email)
         new_password = st.text_input("NEW PASSWORD (leave blank to keep current)", type="password")
         confirm_password = st.text_input("CONFIRM NEW PASSWORD", type="password")
 
         update = st.form_submit_button("💾 SAVE", type="primary", use_container_width=True)
 
         if update:
-            if not check_password(current_password, get_admin()[1]):
+            if not user_row or not check_password(current_password, user_row[0]):
                 st.error("Current password is incorrect.")
             elif not new_email.strip():
                 st.error("Email cannot be empty.")
@@ -764,8 +859,14 @@ elif page == "⚙ ACCOUNT":
             elif new_password and len(new_password) < 6:
                 st.error("New password must be at least 6 characters.")
             else:
-                final_password = new_password if new_password else current_password
-                update_admin_credentials(new_email, final_password)
+                final_password = hash_password(new_password) if new_password else user_row[0]
+                conn = db()
+                conn.execute(
+                    "UPDATE users SET email=?, password_hash=? WHERE email=?",
+                    (new_email.strip().lower(), final_password, st.session_state.user_email)
+                )
+                conn.commit()
+                conn.close()
                 st.session_state.user_email = new_email.strip().lower()
                 st.success("Account updated successfully.")
                 st.rerun()
