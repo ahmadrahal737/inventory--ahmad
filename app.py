@@ -49,7 +49,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# COLORS / UI (mobile-friendly)
+# COLORS / UI (better contrast, mobile-friendly)
 # ============================================================
 
 st.markdown("""
@@ -62,11 +62,11 @@ st.markdown("""
     --red: #D32F2F;
     --light: #F5F5F5;
     --white: #FFFFFF;
-    --gray: #666666;
+    --gray: #555555;
 }
 
 .stApp {
-    background: #F4F4F4;
+    background: #ECEDEF;
 }
 
 .block-container {
@@ -78,23 +78,38 @@ st.markdown("""
 
 .main-title {
     background: #111111;
-    color: #FF9800;
+    color: #FFA733;
     padding: 18px;
     border-radius: 15px;
     text-align: center;
     font-size: 30px;
     font-weight: 800;
     margin-bottom: 20px;
+    letter-spacing: 0.3px;
+}
+
+/* Make body text darker / more readable everywhere */
+p, span, label, li, div[data-testid="stMarkdownContainer"] {
+    color: #1A1A1A;
 }
 
 .key-card {
     background: #FFFFFF;
-    border: 2px solid #EEEEEE;
+    border: 2px solid #DDDDDD;
     border-left: 7px solid #F57C00;
     border-radius: 16px;
     padding: 16px;
     margin-bottom: 15px;
-    box-shadow: 0 3px 12px rgba(0,0,0,0.08);
+    box-shadow: 0 3px 12px rgba(0,0,0,0.10);
+}
+
+/* Give every info card (st.container(border=True)) the same
+   clear white card look instead of the faint default gray */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background: #FFFFFF;
+    border: 1.5px solid #DADADA !important;
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 .key-name {
@@ -105,13 +120,13 @@ st.markdown("""
 }
 
 .stock-good {
-    color: #111111;
+    color: #1B5E20;
     font-size: 20px;
     font-weight: 800;
 }
 
 .stock-low {
-    color: #D32F2F;
+    color: #C62828;
     font-size: 20px;
     font-weight: 800;
 }
@@ -122,10 +137,42 @@ div.stFormSubmitButton > button {
     border-radius: 11px;
     font-weight: 700;
     font-size: 16px;
+    border: 1.5px solid #D8D8D8;
+    color: #111111;
+}
+
+div.stButton > button[kind="primary"],
+div.stFormSubmitButton > button[kind="primary"] {
+    background: #F57C00;
+    color: #FFFFFF;
+    border: none;
+}
+
+div.stButton > button[kind="primary"]:hover,
+div.stFormSubmitButton > button[kind="primary"]:hover {
+    background: #E65100;
 }
 
 input, textarea {
     border-radius: 10px !important;
+    color: #111111 !important;
+}
+
+section[data-testid="stSidebar"] {
+    background: #161616;
+}
+
+section[data-testid="stSidebar"] * {
+    color: #F1F1F1;
+}
+
+/* Metric numbers were too light before */
+div[data-testid="stMetricValue"] {
+    color: #111111;
+    font-weight: 800;
+}
+div[data-testid="stMetricLabel"] {
+    color: #444444;
 }
 
 /* ---------- Mobile tweaks ---------- */
@@ -300,9 +347,17 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "user_email" not in st.session_state:
     st.session_state.user_email = ""
+if "cookie_sync_done" not in st.session_state:
+    st.session_state.cookie_sync_done = False
 
 # Try to restore login from the cookie (so refreshing / reopening
-# the app doesn't ask you to sign in again)
+# the app doesn't ask you to sign in again).
+#
+# The cookie component needs one extra "round trip" with the
+# browser before it can report back a saved cookie. If we don't
+# find one on the very first run, we force a single silent rerun
+# to give it a chance to load before giving up and showing the
+# login screen.
 if not st.session_state.logged_in:
     saved_token = cookie_controller.get(COOKIE_NAME)
     if saved_token:
@@ -310,6 +365,10 @@ if not st.session_state.logged_in:
         if restored_email:
             st.session_state.logged_in = True
             st.session_state.user_email = restored_email
+
+    if not st.session_state.logged_in and not st.session_state.cookie_sync_done:
+        st.session_state.cookie_sync_done = True
+        st.rerun()
 
 def logout_user():
     st.session_state.logged_in = False
@@ -362,7 +421,7 @@ if not st.session_state.logged_in:
 
 st.sidebar.markdown(
     """
-    <h2 style="color:#F57C00;">🔑 Engineer Ahmad</h2>
+    <h2 style="color:#FFA733;">🔑 Engineer Ahmad</h2>
     """,
     unsafe_allow_html=True
 )
@@ -376,7 +435,7 @@ menu_items = [
     "🔑 CAR KEYS",
     "➕ ADD KEY",
     "📋 HISTORY",
-    "⚙️ ACCOUNT"
+    "⚙ ACCOUNT"
 ]
 
 page = st.sidebar.radio("MENU", menu_items)
@@ -417,7 +476,7 @@ if page == "🏠 DASHBOARD":
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("🔑 KEY TYPES", total_keys)
     c2.metric("📦 TOTAL STOCK", total_quantity)
-    c3.metric("⚠️ LOW STOCK", low_stock)
+    c3.metric("⚠ LOW STOCK", low_stock)
     c4.metric("💰 STOCK VALUE", f"${total_value:,.2f}")
 
     st.divider()
@@ -449,7 +508,7 @@ if page == "🏠 DASHBOARD":
 
     if low_stock:
         st.divider()
-        st.subheader("⚠️ Low Stock Items")
+        st.subheader("⚠ Low Stock Items")
         conn = db()
         cur = conn.cursor()
         cur.execute("""
@@ -522,7 +581,7 @@ elif page == "🔑 CAR KEYS":
                         image = Image.open(io.BytesIO(image_data))
                         st.image(image, use_container_width=True)
                     except Exception:
-                        st.write("🖼️ Image unavailable")
+                        st.write("🖼 Image unavailable")
                 else:
                     st.markdown(
                         """
@@ -543,7 +602,7 @@ elif page == "🔑 CAR KEYS":
                 if key_color: st.write(f"🎨 **COLOR:** {key_color}")
 
                 if quantity <= low_limit:
-                    st.markdown(f'<div class="stock-low">📦 STOCK: {quantity} ⚠️ LOW STOCK</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="stock-low">📦 STOCK: {quantity} ⚠ LOW STOCK</div>', unsafe_allow_html=True)
                 else:
                     st.markdown(f'<div class="stock-good">📦 STOCK: {quantity}</div>', unsafe_allow_html=True)
 
@@ -582,11 +641,11 @@ elif page == "🔑 CAR KEYS":
 
                 st.divider()
 
-                if st.button("✏️ EDIT", key=f"edit_{key_id}", use_container_width=True):
+                if st.button("✏ EDIT", key=f"edit_{key_id}", use_container_width=True):
                     st.session_state["edit_key_id"] = key_id
                     st.rerun()
 
-                if st.button("🗑️ DELETE", key=f"delete_{key_id}", use_container_width=True):
+                if st.button("🗑 DELETE", key=f"delete_{key_id}", use_container_width=True):
                     st.session_state["delete_key_id"] = key_id
                     st.rerun()
 
@@ -604,7 +663,7 @@ elif page == "🔑 CAR KEYS":
 
         if old:
             st.divider()
-            st.header("✏️ EDIT CAR KEY")
+            st.header("✏ EDIT CAR KEY")
             (
                 old_name, old_part, old_brand, old_model, old_year,
                 old_type, old_color, old_quantity, old_price, old_low,
@@ -656,10 +715,10 @@ elif page == "🔑 CAR KEYS":
     # ---- Delete confirmation ----
     if "delete_key_id" in st.session_state:
         delete_id = st.session_state.delete_key_id
-        st.warning("⚠️ DELETE THIS CAR KEY PERMANENTLY?")
+        st.warning("⚠ DELETE THIS CAR KEY PERMANENTLY?")
         yes, no = st.columns(2)
 
-        if yes.button("🗑️ YES, DELETE", use_container_width=True):
+        if yes.button("🗑 YES, DELETE", use_container_width=True):
             conn = db()
             cur = conn.cursor()
             cur.execute("SELECT key_name FROM keys_inventory WHERE id=?", (delete_id,))
@@ -795,11 +854,11 @@ elif page == "📋 HISTORY":
 # ACCOUNT (change your email / password)
 # ============================================================
 
-elif page == "⚙️ ACCOUNT":
+elif page == "⚙ ACCOUNT":
     st.markdown(
         """
         <div class="main-title">
-            ⚙️ ACCOUNT SETTINGS
+            ⚙ ACCOUNT SETTINGS
         </div>
         """,
         unsafe_allow_html=True
