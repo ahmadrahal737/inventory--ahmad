@@ -170,19 +170,16 @@ elif choice == "تصدير البيانات (CSV)":
         )
     else:
         st.warning("لا توجد بيانات متاحة للتصدير حالياً.")
-from flask import Flask, request, jsonify, render_template_string
+import streamlit as st
 import sqlite3
 
-app = Flask(__name__)
-
-# إنشاء قاعدة البيانات تلقائياً للمستخدمين
+# إنشاء قاعدة بيانات الحسابات
 def init_db():
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
+            email TEXT PRIMARY KEY,
             password TEXT NOT NULL,
             is_approved INTEGER DEFAULT 0
         )
@@ -192,56 +189,52 @@ def init_db():
 
 init_db()
 
-# 1. صفحة التسجيل (Register)
-@app.route('/register', methods=['POST'])
-def register():
-    data = request.json
-    email = data.get('email')
-    password = data.get('password')
-    
-    try:
-        conn = sqlite3.connect('users.db')
-        cursor = conn.cursor()
-        # يتم حفظ المستخدم مع is_approved = 0 (بانتظار الموافقة)
-        cursor.execute("INSERT INTO users (email, password, is_approved) VALUES (?, ?, 0)", (email, password))
-        conn.commit()
-        conn.close()
-        return jsonify({"message": "تم التسجيل بنجاح! حسابك بانتظار موافقة المسؤول."}), 201
-    except:
-        return jsonify({"error": "البريد الإلكتروني مستخدم بالفعل"}), 400
+# إدارة حالة الدخول
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
 
-# 2. صفحة تسجيل الدخول (Login)
-@app.route('/login', methods=['POST'])
-def login():
-    data = request.json
-    email = data.get('email')
-    password = data.get('password')
-    
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT is_approved FROM users WHERE email = ? AND password = ?", (email, password))
-    user = cursor.fetchone()
-    conn.close()
-    
-    if user:
-        if user[0] == 1:
-            return jsonify({"message": "تم الدخول بنجاح!", "status": "approved"})
-        else:
-            return jsonify({"error": "حسابك قيد مراجعة المسؤول ولم يتم تفعيله بعد."}), 403
-    return jsonify({"error": "البريد الإلكتروني أو كلمة السر غير صحيحة"}), 401
+# الشاشة قبل تسجيل الدخول
+if not st.session_state['logged_in']:
+    st.title("تسجيل الدخول / إنشاء حساب")
+    tab1, tab2 = st.tabs(["تسجيل الدخول", "حساب جديد"])
 
-# 3. لوحة تحكم الأدمن لتمكين الحسابات (Admin Approve)
-@app.route('/admin/approve', methods=['POST'])
-def approve_user():
-    # هنا تضع إيميل المستخدم الذي تريد الموافقة عليه
-    data = request.json
-    target_email = data.get('email')
-    
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    cursor.execute("UPDATE users SET is_approved = 1 WHERE email = ?", (target_email,))
-    conn.commit()
-    conn.close()
+    with tab1:
+        email = st.text_input("البريد الإلكتروني", key="login_email")
+        password = st.text_input("كلمة السر", type="password", key="login_pass")
+        if st.button("دخول"):
+            conn = sqlite3.connect('users.db')
+            cursor = conn.cursor()
+            cursor.execute("SELECT is_approved FROM users WHERE email=? AND password=?", (email, password))
+            user = cursor.fetchone()
+            conn.close()
+            
+            if user:
+                if user[0] == 1:
+                    st.session_state['logged_in'] = True
+                    st.success("تم الدخول بنجاح!")
+                    st.rerun()
+                else:
+                    st.warning("حسابك بانتظار موافقة المسؤول.")
+            else:
+                st.error("البريد أو كلمة السر غير صحيحة")
+
+    with tab2:
+        new_email = st.text_input("البريد الإلكتروني", key="reg_email")
+        new_pass = st.text_input("كلمة السر", type="password", key="reg_pass")
+        if st.button("إنشاء حساب"):
+            try:
+                conn = sqlite3.connect('users.db')
+                cursor = conn.cursor()
+                cursor.execute("INSERT INTO users (email, password, is_approved) VALUES (?, ?, 0)", (new_email, new_pass))
+                conn.commit()
+                conn.close()
+                st.info("تم إنشاء الحساب! يرجى الانتظار لحين موافقة المسؤول.")
+            except:
+                st.error("البريد الإلكتروني مستخدم بالفعل")
+
+    st.stop() # يمنع عرض باقي التطبيق الأصلي حتى يتم الدخول
+
+# --- ضع كود تطبيقك الأصلي هنا (سيعمل فقط بعد تسجيل الدخول) ---
     
     return jsonify({"message": f"تمت الموافقة على حساب {target_email} بنجاح!"})
 
