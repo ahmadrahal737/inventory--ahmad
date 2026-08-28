@@ -275,7 +275,7 @@ def update_admin_credentials(new_email, new_password):
     conn.close()
 
 # ============================================================
-# COOKIE HELPERS & SESSION STATE
+# COOKIE HELPERS & SESSION STATE (FIXED)
 # ============================================================
 
 def make_token(email):
@@ -304,7 +304,12 @@ if "cookie_sync_done" not in st.session_state:
     st.session_state.cookie_sync_done = False
 
 if not st.session_state.logged_in:
-    saved_token = cookie_controller.get(COOKIE_NAME)
+    try:
+        cookies_dict = cookie_controller.getAll()
+        saved_token = cookies_dict.get(COOKIE_NAME) if cookies_dict else None
+    except Exception:
+        saved_token = None
+
     if saved_token:
         restored_email = verify_token(saved_token)
         if restored_email:
@@ -318,7 +323,10 @@ if not st.session_state.logged_in:
 def logout_user():
     st.session_state.logged_in = False
     st.session_state.user_email = ""
-    cookie_controller.remove(COOKIE_NAME)
+    try:
+        cookie_controller.remove(COOKIE_NAME)
+    except Exception:
+        pass
     st.rerun()
 
 # ============================================================
@@ -349,11 +357,14 @@ if not st.session_state.logged_in:
             st.session_state.logged_in = True
             st.session_state.user_email = admin_email
             if stay_signed_in:
-                cookie_controller.set(
-                    COOKIE_NAME,
-                    make_token(admin_email),
-                    max_age=LOGIN_DAYS * 24 * 60 * 60
-                )
+                try:
+                    cookie_controller.set(
+                        COOKIE_NAME,
+                        make_token(admin_email),
+                        max_age=LOGIN_DAYS * 24 * 60 * 60
+                    )
+                except Exception:
+                    pass
             st.rerun()
         else:
             st.error("Invalid email or password.")
@@ -834,11 +845,14 @@ elif page == "⚙ ACCOUNT":
                 final_password = new_password if new_password else current_password
                 update_admin_credentials(new_email, final_password)
                 st.session_state.user_email = new_email.strip().lower()
-                cookie_controller.set(
-                    COOKIE_NAME,
-                    make_token(st.session_state.user_email),
-                    max_age=LOGIN_DAYS * 24 * 60 * 60
-                )
+                try:
+                    cookie_controller.set(
+                        COOKIE_NAME,
+                        make_token(st.session_state.user_email),
+                        max_age=LOGIN_DAYS * 24 * 60 * 60
+                    )
+                except Exception:
+                    pass
                 st.success("Account updated successfully.")
                 st.rerun()
 
