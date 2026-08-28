@@ -5,7 +5,7 @@ import io
 import secrets
 import hashlib
 import hmac
-from datetime import datetime
+import time
 
 try:
     from streamlit_cookies_controller import CookieController
@@ -14,7 +14,7 @@ except ImportError:
     st.stop()
 
 # ============================================================
-# ENGINEER AHMAD - CAR KEY INVENTORY (REMEMBER ME ENABLED)
+# ENGINEER AHMAD - CAR KEY INVENTORY (STABLE COOKIES)
 # ============================================================
 
 DB_NAME = "car_keys.db"
@@ -25,7 +25,7 @@ DEFAULT_ADMIN_PASSWORD = "changeme123"
 
 SECRET_KEY = "ahmad-car-keys-please-change-this-secret"
 COOKIE_NAME = "ahmad_key_inventory_auth"
-LOGIN_DAYS = 365  # مدة تذكر تسجيل الدخول (سنة كاملة)
+LOGIN_DAYS = 365
 
 # ============================================================
 # PAGE CONFIGURATION
@@ -74,7 +74,6 @@ st.markdown("""
     font-size: 30px;
     font-weight: 800;
     margin-bottom: 20px;
-    letter-spacing: 0.3px;
 }
 
 p, span, label, li, div[data-testid="stMarkdownContainer"] {
@@ -141,21 +140,6 @@ div[data-testid="stMetricValue"] {
 }
 div[data-testid="stMetricLabel"] {
     color: #444444;
-}
-
-@media (max-width: 640px) {
-    .main-title {
-        font-size: 22px;
-        padding: 14px;
-        border-radius: 12px;
-    }
-    .key-name {
-        font-size: 19px;
-    }
-    .block-container {
-        padding-left: 0.6rem;
-        padding-right: 0.6rem;
-    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -275,7 +259,7 @@ def update_admin_credentials(new_email, new_password):
     conn.close()
 
 # ============================================================
-# COOKIE HELPERS & SESSION STATE (FIXED)
+# COOKIE HELPERS & SESSION STATE (STABLE FIX)
 # ============================================================
 
 def make_token(email):
@@ -294,15 +278,20 @@ def verify_token(token):
         pass
     return None
 
-cookie_controller = CookieController()
+# تخزين الـ CookieController في الsession_state لضمان استقرار العمل وعدم تكراره
+if "cookie_controller" not in st.session_state:
+    st.session_state.cookie_controller = CookieController()
+
+cookie_controller = st.session_state.cookie_controller
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "user_email" not in st.session_state:
     st.session_state.user_email = ""
-if "cookie_sync_done" not in st.session_state:
-    st.session_state.cookie_sync_done = False
+if "cookie_checked" not in st.session_state:
+    st.session_state.cookie_checked = False
 
+# التحقق من وجود الكوكي تلقائياً عند فتح الموقع
 if not st.session_state.logged_in:
     try:
         cookies_dict = cookie_controller.getAll()
@@ -316,8 +305,9 @@ if not st.session_state.logged_in:
             st.session_state.logged_in = True
             st.session_state.user_email = restored_email
 
-    if not st.session_state.logged_in and not st.session_state.cookie_sync_done:
-        st.session_state.cookie_sync_done = True
+    if not st.session_state.logged_in and not st.session_state.cookie_checked:
+        st.session_state.cookie_checked = True
+        time.sleep(0.2)
         st.rerun()
 
 def logout_user():
@@ -325,6 +315,7 @@ def logout_user():
     st.session_state.user_email = ""
     try:
         cookie_controller.remove(COOKIE_NAME)
+        time.sleep(0.1)
     except Exception:
         pass
     st.rerun()
@@ -363,6 +354,7 @@ if not st.session_state.logged_in:
                         make_token(admin_email),
                         max_age=LOGIN_DAYS * 24 * 60 * 60
                     )
+                    time.sleep(0.2) # مهلة بسيطة لضمان حفظ الكوكي بالمتصفح قبل إعادة التحميل
                 except Exception:
                     pass
             st.rerun()
@@ -851,6 +843,7 @@ elif page == "⚙ ACCOUNT":
                         make_token(st.session_state.user_email),
                         max_age=LOGIN_DAYS * 24 * 60 * 60
                     )
+                    time.sleep(0.2)
                 except Exception:
                     pass
                 st.success("Account updated successfully.")
