@@ -423,8 +423,7 @@ export default function App() {
                   setTab("products")
                 }
               >
-                <Text style={styles.quickIcon}>
-                  ▣
+                <Text style={styles.quickIcon}  
                 </Text>
 
                 <Text>
@@ -576,7 +575,7 @@ export default function App() {
           onPress={openAdd}
         >
           <Text style={styles.addButtonText}>
-            ＋
+            
           </Text>
         </Pressable>
 
