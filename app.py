@@ -5,16 +5,9 @@ import io
 import secrets
 import hashlib
 import hmac
-import time
-
-try:
-    from streamlit_cookies_controller import CookieController
-except ImportError:
-    st.error("Please install: pip install streamlit-cookies-controller")
-    st.stop()
 
 # ============================================================
-# ENGINEER AHMAD - CAR KEY INVENTORY (STABLE COOKIES)
+# ENGINEER AHMAD - CAR KEY INVENTORY (STABLE SESSION AUTH)
 # ============================================================
 
 DB_NAME = "car_keys.db"
@@ -22,10 +15,6 @@ LOW_STOCK_DEFAULT = 5
 
 DEFAULT_ADMIN_EMAIL = "ahmad@example.com"
 DEFAULT_ADMIN_PASSWORD = "changeme123"
-
-SECRET_KEY = "ahmad-car-keys-please-change-this-secret"
-COOKIE_NAME = "ahmad_key_inventory_auth"
-LOGIN_DAYS = 365
 
 # ============================================================
 # PAGE CONFIGURATION
@@ -259,65 +248,17 @@ def update_admin_credentials(new_email, new_password):
     conn.close()
 
 # ============================================================
-# COOKIE HELPERS & SESSION STATE (STABLE FIX)
+# SESSION STATE AUTHENTICATION
 # ============================================================
-
-def make_token(email):
-    sig = hmac.new(SECRET_KEY.encode(), email.encode(), hashlib.sha256).hexdigest()
-    return f"{email}|{sig}"
-
-def verify_token(token):
-    try:
-        email, sig = token.split("|")
-        expected = hmac.new(SECRET_KEY.encode(), email.encode(), hashlib.sha256).hexdigest()
-        if hmac.compare_digest(sig, expected):
-            admin_email, _ = get_admin()
-            if email == admin_email:
-                return email
-    except Exception:
-        pass
-    return None
-
-# تخزين الـ CookieController في الsession_state لضمان استقرار العمل وعدم تكراره
-if "cookie_controller" not in st.session_state:
-    st.session_state.cookie_controller = CookieController()
-
-cookie_controller = st.session_state.cookie_controller
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "user_email" not in st.session_state:
     st.session_state.user_email = ""
-if "cookie_checked" not in st.session_state:
-    st.session_state.cookie_checked = False
-
-# التحقق من وجود الكوكي تلقائياً عند فتح الموقع
-if not st.session_state.logged_in:
-    try:
-        cookies_dict = cookie_controller.getAll()
-        saved_token = cookies_dict.get(COOKIE_NAME) if cookies_dict else None
-    except Exception:
-        saved_token = None
-
-    if saved_token:
-        restored_email = verify_token(saved_token)
-        if restored_email:
-            st.session_state.logged_in = True
-            st.session_state.user_email = restored_email
-
-    if not st.session_state.logged_in and not st.session_state.cookie_checked:
-        st.session_state.cookie_checked = True
-        time.sleep(0.2)
-        st.rerun()
 
 def logout_user():
     st.session_state.logged_in = False
     st.session_state.user_email = ""
-    try:
-        cookie_controller.remove(COOKIE_NAME)
-        time.sleep(0.1)
-    except Exception:
-        pass
     st.rerun()
 
 # ============================================================
@@ -338,7 +279,6 @@ if not st.session_state.logged_in:
     st.subheader("Login")
     email = st.text_input("EMAIL", placeholder="Enter your email", key="login_email")
     password = st.text_input("PASSWORD", type="password", placeholder="Enter your password", key="login_password")
-    stay_signed_in = st.checkbox("Stay signed in on this device", value=True)
 
     if st.button("🔐 LOGIN", type="primary", use_container_width=True):
         if not email or not password:
@@ -347,16 +287,6 @@ if not st.session_state.logged_in:
             admin_email, _ = get_admin()
             st.session_state.logged_in = True
             st.session_state.user_email = admin_email
-            if stay_signed_in:
-                try:
-                    cookie_controller.set(
-                        COOKIE_NAME,
-                        make_token(admin_email),
-                        max_age=LOGIN_DAYS * 24 * 60 * 60
-                    )
-                    time.sleep(0.2) # مهلة بسيطة لضمان حفظ الكوكي بالمتصفح قبل إعادة التحميل
-                except Exception:
-                    pass
             st.rerun()
         else:
             st.error("Invalid email or password.")
@@ -837,15 +767,6 @@ elif page == "⚙ ACCOUNT":
                 final_password = new_password if new_password else current_password
                 update_admin_credentials(new_email, final_password)
                 st.session_state.user_email = new_email.strip().lower()
-                try:
-                    cookie_controller.set(
-                        COOKIE_NAME,
-                        make_token(st.session_state.user_email),
-                        max_age=LOGIN_DAYS * 24 * 60 * 60
-                    )
-                    time.sleep(0.2)
-                except Exception:
-                    pass
                 st.success("Account updated successfully.")
                 st.rerun()
 
