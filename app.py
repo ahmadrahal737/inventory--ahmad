@@ -240,3 +240,21 @@ if not st.session_state['logged_in']:
 
 if __name__ == '__main__':
     app.run(debug=True)
+# لوحة تفعيل الحسابات (Admin)
+with st.sidebar.expander("لوحة المسؤول (Admin)"):
+    admin_pass = st.text_input("كلمة سر الأدمن", type="password")
+    if admin_pass == "admin123": # يمكنك تغيير كلمة السر هذه
+        conn = sqlite3.connect('users.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT email, is_approved FROM users")
+        users = cursor.fetchall()
+        
+        for u in users:
+            col1, col2 = st.columns([2, 1])
+            col1.write(f"{u[0]} ({'مفعل' if u[1]==1 else 'غير مفعل'})")
+            if u[1] == 0:
+                if col2.button("تفعيل", key=u[0]):
+                    cursor.execute("UPDATE users SET is_approved=1 WHERE email=?", (u[0],))
+                    conn.commit()
+                    st.rerun()
+        conn.close()
